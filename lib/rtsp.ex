@@ -134,6 +134,18 @@ defmodule RTSP do
     {:noreply, ConnectionManager.check_recbuf(state)}
   end
 
+  @impl true
+  def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
+    send(state.parent_pid, {state.pid, :session_closed})
+    {:noreply, ConnectionManager.clean(state)}
+  end
+
+  @impl true
+  def handle_info(msg, state) do
+    Logger.warning("Received unexpected message: #{inspect(msg)}")
+    {:noreply, state}
+  end
+
   defp receive_data(state) do
     case :gen_tcp.recv(state.socket, 0, state.timeout) do
       {:ok, data} ->
@@ -149,6 +161,8 @@ defmodule RTSP do
 
   defp do_handle_data(state, data) do
     datetime = DateTime.utc_now()
+    IO.inspect(datetime)
+
 
     {rtp_packets, _rtcp_packets, unprocessed_data} =
       split_packets(state.unprocessed_data <> data, state.rtsp_session, {[], []})
@@ -218,6 +232,13 @@ defmodule RTSP do
     }
 
     Map.put(handlers, packet.ssrc, stream_handler)
+  end
+
+  defp parser(:H264, fmtp) do
+    sps = fmtp.sprop_parameter_sets && fmtp.sprop_parameter_sets.sps
+    pps = fmtp.sprop_parameter_sets && fmtp.sprop_parameter_sets.pps
+
+    {RTSP.RTP.H264, RTSP.RTP.H264.init(sps: sps, pps: pps)}
   end
 
   defp parser(:H265, fmtp) do

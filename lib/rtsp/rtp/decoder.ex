@@ -1,4 +1,4 @@
-defmodule RTSP.RTP.Parser do
+defmodule RTSP.RTP.Decoder do
   @moduledoc """
   Behaviour to depayload and parse rtp packets.
   """
