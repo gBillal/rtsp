@@ -70,7 +70,7 @@ defmodule RTSP.ConnectionManager do
   @spec check_recbuf(State.t()) :: State.t()
   def check_recbuf(state) do
     Logger.debug("Check recbuf of socket")
-    ref = Process.send_after(self(), :check_recbuf, :timer.seconds(30))
+    ref = Process.send_after(self(), :check_recbuf, :timer.seconds(5))
 
     with {:ok, [recbuf: recbuf]} <- :inet.getopts(state.socket, [:recbuf]) do
       :ok = :inet.setopts(state.socket, buffer: recbuf)
@@ -81,9 +81,9 @@ defmodule RTSP.ConnectionManager do
 
   @spec clean(State.t()) :: State.t()
   def clean(state) do
-    if state.rtsp_session != nil, do: Membrane.RTSP.close(state.rtsp_session)
-    if state.keep_alive_timer != nil, do: Process.cancel_timer(state.keep_alive_timer)
-    if state.check_recbuf_timer != nil, do: Process.cancel_timer(state.check_recbuf_timer)
+    if state.rtsp_session, do: Membrane.RTSP.close(state.rtsp_session)
+    if state.keep_alive_timer, do: Process.cancel_timer(state.keep_alive_timer)
+    if state.check_recbuf_timer, do: Process.cancel_timer(state.check_recbuf_timer)
 
     %{state | state: :init, rtsp_session: nil, keep_alive_timer: nil}
   end

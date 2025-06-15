@@ -61,8 +61,12 @@ defmodule RTSP do
       onvif_replay: opts[:onvif_replay] || false,
       start_date: opts[:start_date] || DateTime.utc_now(),
       end_date: opts[:end_date],
-      parent_pid: opts[:parent_pid]
+      parent_pid: opts[:parent_pid],
+      name: opts[:name] || self()
     }
+
+    # Don't exit if rtsp session crashed or stopped
+    Process.flag(:trap_exit, true)
 
     {:ok, state}
   end
@@ -91,17 +95,16 @@ defmodule RTSP do
       {:ok, new_state} ->
         :ok = :inet.setopts(state.socket, buffer: @initial_recv_buffer, active: false)
         :ok = Membrane.RTSP.transfer_socket_control(new_state.rtsp_session, self())
-        self = self()
 
         pid =
           spawn(fn ->
             state = %{
               unprocessed_data: <<>>,
               stream_handlers: %{},
-              pid: self,
+              pid: new_state.name,
               parent_pid: new_state.parent_pid,
               socket: new_state.socket,
-              timeout: new_state.timeout,
+              timeout: :timer.seconds(10),
               rtsp_session: new_state.rtsp_session,
               tracks: new_state.tracks,
               onvif_replay: new_state.onvif_replay
@@ -136,7 +139,7 @@ defmodule RTSP do
 
   @impl true
   def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
-    send(state.parent_pid, {state.pid, :session_closed})
+    send(state.parent_pid, {state.name, :session_closed})
     {:noreply, ConnectionManager.clean(state)}
   end
 
@@ -161,8 +164,6 @@ defmodule RTSP do
 
   defp do_handle_data(state, data) do
     datetime = DateTime.utc_now()
-    IO.inspect(datetime)
-
 
     {rtp_packets, _rtcp_packets, unprocessed_data} =
       split_packets(state.unprocessed_data <> data, state.rtsp_session, {[], []})

@@ -99,6 +99,8 @@ defmodule RTSP.RTP.H264 do
     end
   end
 
+  defp process_au(%{access_unit: []} = state), do: {nil, state}
+
   defp process_au(state) do
     key_frame? = key_frame?(state.access_unit)
 
@@ -109,10 +111,10 @@ defmodule RTSP.RTP.H264 do
           |> get_parameter_sets()
           |> add_parameter_sets()
 
-        {wrap_into_buffer(state), %{state | seen_key_frame?: true}}
+        {wrap_into_buffer(state, key_frame?), %{state | seen_key_frame?: true}}
 
       state.seen_key_frame? ->
-        {wrap_into_buffer(state), state}
+        {wrap_into_buffer(state, key_frame?), state}
 
       true ->
         {nil, state}
@@ -138,9 +140,9 @@ defmodule RTSP.RTP.H264 do
     |> then(&%{state | access_unit: &1})
   end
 
-  defp wrap_into_buffer(state) do
+  defp wrap_into_buffer(state, keyframe?) do
     au = Enum.map_join(state.access_unit, &(@frame_prefix <> &1))
-    {au, state.timestamp}
+    {au, state.timestamp, keyframe?}
   end
 
   defp key_frame?(au) do

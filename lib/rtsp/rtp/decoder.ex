@@ -5,7 +5,7 @@ defmodule RTSP.RTP.Decoder do
 
   @type state :: any()
   @type rtp_timestamp :: non_neg_integer()
-  @type sample :: {binary(), rtp_timestamp()}
+  @type sample :: {binary(), rtp_timestamp(), keyframe? :: boolean()}
 
   @doc """
   Initialize deapyloader

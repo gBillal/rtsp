@@ -18,7 +18,8 @@ defmodule RTSP.State do
           onvif_replay: boolean(),
           start_date: DateTime.t(),
           end_date: DateTime.t(),
-          parent_pid: pid()
+          parent_pid: pid(),
+          name: atom() | pid()
         }
 
   @enforce_keys [:stream_uri, :allowed_media_types, :timeout, :keep_alive_interval, :parent_pid]
@@ -33,6 +34,7 @@ defmodule RTSP.State do
                 check_recbuf_timer: nil,
                 onvif_replay: false,
                 start_date: nil,
-                end_date: nil
+                end_date: nil,
+                name: nil
               ]
 end

@@ -100,8 +100,8 @@ defmodule RTSP.StreamHandler do
       {:ok, nil, state} ->
         {nil, %{handler | parser_state: state}}
 
-      {:ok, {sample, rtp_timestamp}, state} ->
-        {{sample, rtp_timestamp, handler.wallclock_timestamp},
+      {:ok, {sample, rtp_timestamp, keyframe?}, state} ->
+        {{sample, rtp_timestamp, keyframe?, handler.wallclock_timestamp},
          %{handler | parser_state: state, wallclock_timestamp: wallclock_timestamp}}
 
       {:error, reason, state} ->
