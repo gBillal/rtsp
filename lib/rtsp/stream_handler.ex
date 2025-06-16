@@ -1,7 +1,6 @@
 defmodule RTSP.StreamHandler do
-  @moduledoc """
-  Handle an RTP stream.
-  """
+  @moduledoc false
+  # Handle an RTP stream.
 
   require Logger
 

@@ -1,5 +1,8 @@
 # RTSP
 
+[![Hex.pm](https://img.shields.io/hexpm/v/rtsp.svg)](https://hex.pm/packages/rtsp)
+[![API Docs](https://img.shields.io/badge/api-docs-yellow.svg?style=flat)](https://hexdocs.pm/rtsp)
+
 Simplify connecting to RTSP servers.
 
 ## Usage
