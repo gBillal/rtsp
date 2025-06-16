@@ -1,6 +1,21 @@
 # RTSP
 
-RTSP client
+Simplify connecting to RTSP servers.
+
+## Usage
+
+Start the client, connect and start receiving media
+
+```elixir
+{:ok, session} = RTSP.start_link(stream_uri: "rtsp://localhost:554/stream", allowed_media_types: [:video])
+{:ok, tracks} = RTSP.connect(session)
+:ok = RTSP.play(session)
+```
+
+The current process will receive media stream:
+```elixir
+{pid_or_name, control_path, {sample, rtp_timestamp, timestamp, key_frame?}}
+```
 
 ## Installation
 

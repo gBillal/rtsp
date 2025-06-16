@@ -1,6 +1,33 @@
 defmodule RTSP do
   @moduledoc """
-  RTSP client
+  Simplify connecting to RTSP servers.
+
+  ### Usage
+  To start an RTSP session, you can use the `start_link/1` function with the required options:
+
+      {:ok, session} = RTSP.start_link(stream_uri: "rtsp://localhost:554/stream", allowed_media_types: [:video])
+      {:ok, tracks} = RTSP.connect(session)
+      :ok = RTSP.play(session)
+
+  The calling process will receive messages with the received media samples.
+
+  ### Message Types
+
+  The calling process will receive messages in the following format:
+
+    * `{pid_or_name, :discontinuity}` - Indicates a discontinuity in the stream.
+    * `{pid_or_name, control_path, sample}` - Contains the media sample received from the stream.
+      `control_path` is the RTSP control path for the track, and `sample` is the media sample data.
+    * `{pid_or_name, :session_closed}` - Indicates that the RTSP session has been closed.
+
+  A `sample` is a tuple in the format `{payload, rtp_timestamp, wallclock_timestamp, key_frame?}`:
+    * `payload` - The media payload data (a whole access unit in case of `video`).
+    * `rtp_timestamp` - The RTP timestamp of the sample as nano second starting from 0.
+    * `wallclock_timestamp` - The wall clock timestamp when the sample was received.
+    * `key_frame?` - A boolean indicating whether the sample is a key frame (valid for `video` streams.)
+
+  >### TCP and UDP {: .info}
+  > Currently only TCP transport is supported. UDP transport will be added in the future.
   """
 
   use GenServer
@@ -16,6 +43,27 @@ defmodule RTSP do
 
   @initial_recv_buffer 1_000_000
 
+  @type session_opts :: [
+          stream_uri: String.t(),
+          allowed_media_types: [:video | :audio | :application],
+          timeout: pos_integer() | :infinity,
+          keep_alive_interval: pos_integer(),
+          parent_pid: pid(),
+          name: atom() | nil,
+          onvif_replay: boolean(),
+          start_date: DateTime.t() | nil,
+          end_date: DateTime.t() | nil
+        ]
+
+  @typedoc """
+  Represents a track in the RTSP session.
+
+  Each track corresponds to a media stream and contains the following fields:
+  * `control_path` - The RTSP control path for the track, can be used as an `id`.
+  * `type` - The type of the media stream, which can be `:video`, `:audio`, or `:application`.
+  * `fmtp` - The FMTP attribute for the track, which contains format-specific parameters.
+  * `rtpmap` - The RTP mapping attribute for the track, which contains information about the payload type and encoding.
+  """
   @type track :: %{
           control_path: String.t(),
           type: :video | :audio | :application,
@@ -25,8 +73,24 @@ defmodule RTSP do
 
   @doc """
   Starts a new RTSP client session.
+
+  The following options can be provided:
+
+  * `:stream_uri` - The RTSP stream URI to connect to (required).
+  * `:allowed_media_types` - A list of allowed media types, defaults to: `[:video, :audio]`.
+  * `:timeout` - The timeout for RTSP operations (default: `5 seconds`).
+  * `:keep_alive_interval` - The interval for sending keep-alive messages (default: `30 seconds`).
+  * `:parent_pid` - The parent process that will receive messages, defaults to the calling process.
+  * `:name` - The name of the GenServer process, if provided it'll be used as the first element in the sent messages.
+
+  ### Onvif Replay
+  To decode `onvif replay` extension packets, the following options can be provided
+
+  * `:onvif_replay` - Whether to enable ONVIF replay extension (default: `false`).
+  * `:start_date` - The start date for the session.
+  * `:end_date` - The end date for the session.
   """
-  @spec start_link(Keyword.t()) :: GenServer.on_start()
+  @spec start_link(session_opts()) :: GenServer.on_start()
   def start_link(opts) do
     opts = Keyword.put_new(opts, :parent_pid, self())
     GenServer.start_link(__MODULE__, opts, name: opts[:name])
@@ -59,7 +123,7 @@ defmodule RTSP do
       timeout: opts[:timeout] || :timer.seconds(5),
       keep_alive_interval: opts[:keep_alive_interval] || :timer.seconds(30),
       onvif_replay: opts[:onvif_replay] || false,
-      start_date: opts[:start_date] || DateTime.utc_now(),
+      start_date: opts[:start_date],
       end_date: opts[:end_date],
       parent_pid: opts[:parent_pid],
       name: opts[:name] || self()
