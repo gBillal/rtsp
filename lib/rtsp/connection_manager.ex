@@ -56,13 +56,30 @@ defmodule RTSP.ConnectionManager do
       error ->
         error
     end
+  rescue
+    reason ->
+      Logger.error("""
+      ConnectionManager: RTSP session crashed
+      Reason: #{inspect(reason)}
+      """)
+
+      {:error, :session_crashed}
   end
 
   @spec keep_alive(State.t()) :: State.t()
   def keep_alive(state) do
     Logger.debug("Send GET_PARAMETER to keep session alive")
 
-    {:ok, %{status: 200}} = Membrane.RTSP.get_parameter(state.rtsp_session)
+    case Membrane.RTSP.get_parameter(state.rtsp_session) do
+      {:ok, %{status: 200}} ->
+        :ok
+
+      {:ok, body} ->
+        Logger.warning("ConnectionManager: Failed to keep RTSP session alive: #{inspect(body)}")
+
+      {:error, reason} ->
+        Logger.warning("ConnectionManager: Failed to keep RTSP session alive: #{inspect(reason)}")
+    end
 
     %{state | keep_alive_timer: start_keep_alive_timer(state)}
   end
@@ -90,7 +107,10 @@ defmodule RTSP.ConnectionManager do
 
   @spec start_rtsp_connection(State.t()) :: rtsp_method_return()
   defp start_rtsp_connection(state) do
-    case Membrane.RTSP.start_link(state.stream_uri, response_timeout: state.timeout) do
+    case Membrane.RTSP.start_link(state.stream_uri,
+           connection_timeout: state.timeout,
+           response_timeout: state.timeout
+         ) do
       {:ok, session} ->
         {:ok, %{state | rtsp_session: session}}
 

@@ -102,16 +102,17 @@ defmodule RTSP do
   It returns the set up tracks in case of success.
   """
   @spec connect(pid()) :: {:ok, [track()]} | {:error, reason :: any()}
-  def connect(pid) do
-    GenServer.call(pid, :connect)
+  @spec connect(pid(), timeout()) :: {:ok, [track()]} | {:error, reason :: any()}
+  def connect(pid, timeout \\ 5000) do
+    GenServer.call(pid, :connect, timeout)
   end
 
   @doc """
   Sends a play request and starts receiving media streams.
   """
-  @spec play(pid()) :: :ok | {:error, reason :: any()}
-  def play(pid) do
-    GenServer.call(pid, :play)
+  @spec play(pid(), timeout()) :: :ok | {:error, reason :: any()}
+  def play(pid, timeout \\ 5000) do
+    GenServer.call(pid, :play, timeout)
   end
 
   @impl true
