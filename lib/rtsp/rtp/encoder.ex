@@ -3,8 +3,12 @@ defmodule RTSP.RTP.Encoder do
   Behaviour to payload data into rtp packets.
   """
 
-  @type state :: %{required(:sequence_number) => non_neg_integer()}
-  @type init_opts :: [{:sequence_number, non_neg_integer()} | {atom(), any()}]
+  @type state :: %{required(:sequence_number) => non_neg_integer(), atom() => any()}
+  @type init_opts :: [
+          {:sequence_number, non_neg_integer()}
+          | {:max_payload_size, non_neg_integer()}
+          | {atom(), any()}
+        ]
 
   @type rtp_timestamp :: non_neg_integer()
   @type sample :: binary()
@@ -15,7 +19,7 @@ defmodule RTSP.RTP.Encoder do
   @callback init(init_opts()) :: state()
 
   @doc """
-  Invoked when a new RTP packet is received
+  Invoked to handle a new sample (e.g. access unit in case of video)
   """
-  @callback handle_sample(sample(), rtp_timestamp(), state()) :: [ExRTP.Packet.t()]
+  @callback handle_sample(sample(), rtp_timestamp(), state()) :: {[ExRTP.Packet.t()], state()}
 end

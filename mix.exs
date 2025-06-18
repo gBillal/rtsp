@@ -57,7 +57,7 @@ defmodule RTSP.MixProject do
         "LICENSE"
       ],
       formatters: ["html"],
-      source_ref: "v#{@version}",
+      source_ref: "v#{@version}"
     ]
   end
 end
