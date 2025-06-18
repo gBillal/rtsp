@@ -7,6 +7,8 @@ defmodule RTSP.RTP.Encoder do
   @type init_opts :: [
           {:sequence_number, non_neg_integer()}
           | {:max_payload_size, non_neg_integer()}
+          | {:payload_type, non_neg_integer()}
+          | {:ssrc, non_neg_integer()}
           | {atom(), any()}
         ]
 

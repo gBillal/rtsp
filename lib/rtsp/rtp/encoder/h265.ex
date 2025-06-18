@@ -1,6 +1,6 @@
-defmodule RTSP.RTP.Encoder.H264 do
+defmodule RTSP.RTP.Encoder.H265 do
   @moduledoc """
-  Payload H264 access units into RTP packets.
+  Payload H265 access units into RTP packets.
   """
 
   @behaviour RTSP.RTP.Encoder
@@ -8,7 +8,7 @@ defmodule RTSP.RTP.Encoder.H264 do
   alias RTSP.RTP.Encoder.H26x
 
   @impl true
-  def init(options), do: H26x.init(options, :h264)
+  def init(options), do: H26x.init(options, :h265)
 
   @impl true
   defdelegate handle_sample(au, timestamp, state), to: H26x
