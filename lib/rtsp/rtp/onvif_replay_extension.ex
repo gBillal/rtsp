@@ -16,7 +16,10 @@ defmodule RTSP.RTP.OnvifReplayExtension do
 
   defstruct [:timestamp, :keyframe?, :discontinuity?, :last_frame?]
 
-  @spec decode(binary()) :: t()
+  @doc """
+  Decodes the rtp onvif extension header.
+  """
+  @spec decode(header :: binary()) :: t()
   def decode(<<ntp_timestamp::binary-size(8), c::1, _e::1, d::1, t::1, _rest::28>>) do
     %__MODULE__{
       timestamp: from_ntp_timestamp(ntp_timestamp) |> DateTime.from_unix!(:nanosecond),

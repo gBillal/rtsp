@@ -9,7 +9,7 @@ defmodule RTSP.PacketSplitterTest do
     assert {rtp_packets, <<>>} =
              File.stream!("test/fixtures/packets.bin", [], 1024)
              |> Enum.reduce({[], <<>>}, fn data, {rtp_packets, unprocessed_data} ->
-               {packets, _rtcp_packets, unprocessed_data} =
+               {{packets, _rtcp_packets}, unprocessed_data} =
                  PacketSplitter.split_packets(unprocessed_data <> data, nil, {[], []})
 
                {rtp_packets ++ packets, unprocessed_data}

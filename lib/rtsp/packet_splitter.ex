@@ -1,19 +1,20 @@
 defmodule RTSP.PacketSplitter do
   @moduledoc """
-  Split the incoming network packets into RTSP, RTP and RTCP packets.
+  Split the incoming network packets muxed in the same TCP connection into RTSP, RTP and RTCP packets.
   """
 
   require Logger
 
   alias Membrane.RTSP
 
+  @type result :: {rtp_packets :: [binary()], rtcp_packets :: [binary()]}
+
   @max_buffer_size 5 * 1024 * 1024
 
   @doc """
   Split the binary into RTSP, RTP and RTCP packets.
   """
-  @spec split_packets(binary(), RTSP.t(), {[binary()], [binary()]}) ::
-          {[binary()], [binary()], binary()}
+  @spec split_packets(binary(), RTSP.t(), result()) :: {result(), binary()}
   def split_packets(
         <<"$", channel::8, size::16, packet::binary-size(size)-unit(8), rest::binary>>,
         rtsp_session,
@@ -30,7 +31,7 @@ defmodule RTSP.PacketSplitter do
     case RTSP.Response.verify_content_length(data) do
       {:ok, _expected_length, _actual_length} ->
         handle_rtsp_response(rtsp_session, data)
-        {Enum.reverse(rtp_packets), Enum.reverse(rtcp_packets), <<>>}
+        {{Enum.reverse(rtp_packets), Enum.reverse(rtcp_packets)}, <<>>}
 
       {:error, expected_length, actual_length} when actual_length > expected_length ->
         rest_length = actual_length - expected_length
@@ -41,7 +42,7 @@ defmodule RTSP.PacketSplitter do
         split_packets(rest, rtsp_session, {rtp_packets, rtcp_packets})
 
       {:error, expected_length, actual_length} when actual_length <= expected_length ->
-        {Enum.reverse(rtp_packets), Enum.reverse(rtcp_packets), data}
+        {{Enum.reverse(rtp_packets), Enum.reverse(rtcp_packets)}, data}
     end
   end
 
@@ -51,7 +52,7 @@ defmodule RTSP.PacketSplitter do
         {rtp_packets, rtcp_packets}
       )
       when first_byte != 36 do
-    {Enum.reverse(rtp_packets), Enum.reverse(rtcp_packets), <<>>}
+    {{Enum.reverse(rtp_packets), Enum.reverse(rtcp_packets)}, <<>>}
   end
 
   def split_packets(rest, _rtsp_session, _packets) when byte_size(rest) >= @max_buffer_size do
@@ -63,7 +64,7 @@ defmodule RTSP.PacketSplitter do
   end
 
   def split_packets(rest, _rtsp_session, {rtp_packets, rtcp_packets}) do
-    {Enum.reverse(rtp_packets), Enum.reverse(rtcp_packets), rest}
+    {{Enum.reverse(rtp_packets), Enum.reverse(rtcp_packets)}, rest}
   end
 
   defp handle_rtsp_response(nil, _response), do: :ok

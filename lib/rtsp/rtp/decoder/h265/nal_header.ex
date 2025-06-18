@@ -1,4 +1,4 @@
-defmodule RTSP.RTP.H265.NAL.Header do
+defmodule RTSP.RTP.Decoder.H265.NAL.Header do
   @moduledoc false
   # Defines a structure representing Network Abstraction Layer Unit Header
 

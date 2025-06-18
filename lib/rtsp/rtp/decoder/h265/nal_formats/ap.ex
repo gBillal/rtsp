@@ -1,4 +1,4 @@
-defmodule RTSP.RTP.H265.AP do
+defmodule RTSP.RTP.Decoder.H265.AP do
   @moduledoc false
   # Module responsible for parsing Aggregation Packets.
 
@@ -54,7 +54,7 @@ defmodule RTSP.RTP.H265.AP do
 
   use Bunch
 
-  alias RTSP.RTP.H265.NAL
+  alias RTSP.RTP.Decoder.H265.NAL
 
   @type don :: nil | non_neg_integer()
 

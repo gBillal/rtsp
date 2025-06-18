@@ -1,4 +1,4 @@
-defmodule RTSP.RTP.H264.StapA do
+defmodule RTSP.RTP.Decoder.H264.StapA do
   @moduledoc false
   # Module responsible for parsing Single Time Agregation Packets type A.
 
@@ -26,7 +26,7 @@ defmodule RTSP.RTP.H264.StapA do
 
   use Bunch
 
-  alias RTSP.RTP.H264.NAL
+  alias RTSP.RTP.Decoder.H264.NAL
 
   @spec parse(binary()) :: {:ok, [binary()]} | {:error, :packet_malformed}
   def parse(data) do
