@@ -1,11 +1,11 @@
-defmodule RTSP.RTP.H265.FU do
+defmodule RTSP.RTP.Decoder.H265.FU do
   @moduledoc false
   # Module responsible for parsing H265 Fragmentation Unit.
 
   use Bunch
 
   alias __MODULE__
-  alias RTSP.RTP.H265.NAL
+  alias RTSP.RTP.Decoder.H265.NAL
 
   defstruct [:last_seq_num, data: [], type: nil, donl?: false, don: nil]
 

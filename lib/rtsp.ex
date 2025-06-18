@@ -37,7 +37,7 @@ defmodule RTSP do
   import __MODULE__.PacketSplitter
 
   alias RTSP.ConnectionManager
-  alias RTSP.RTP.OnvifReplayExtension
+  alias RTSP.RTP.{Decoder, OnvifReplayExtension}
   alias RTSP.State
   alias RTSP.StreamHandler
 
@@ -304,18 +304,18 @@ defmodule RTSP do
     sps = fmtp.sprop_parameter_sets && fmtp.sprop_parameter_sets.sps
     pps = fmtp.sprop_parameter_sets && fmtp.sprop_parameter_sets.pps
 
-    {RTSP.RTP.H264, RTSP.RTP.H264.init(sps: sps, pps: pps)}
+    {Decoder.H264, Decoder.H264.init(sps: sps, pps: pps)}
   end
 
   defp parser(:H265, fmtp) do
     parser_state =
-      RTSP.RTP.H265.init(
+      Decoder.H265.init(
         vpss: List.wrap(fmtp && fmtp.sprop_vps) |> Enum.map(&clean_parameter_set/1),
         spss: List.wrap(fmtp && fmtp.sprop_sps) |> Enum.map(&clean_parameter_set/1),
         ppss: List.wrap(fmtp && fmtp.sprop_pps) |> Enum.map(&clean_parameter_set/1)
       )
 
-    {RTSP.RTP.H265, parser_state}
+    {Decoder.H265, parser_state}
   end
 
   # An issue with one of Milesight camera where the parameter sets have

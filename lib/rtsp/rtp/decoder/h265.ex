@@ -1,22 +1,22 @@
-defmodule RTSP.RTP.H264 do
+defmodule RTSP.RTP.Decoder.H265 do
   @moduledoc """
-  Parse H264 NAL units
+  Parse and assemble H265 NAL units into access units.
   """
 
   @behaviour RTSP.RTP.Decoder
 
-  require Logger
-
-  alias RTSP.RTP.H264.{FU, NAL, StapA}
+  alias __MODULE__.{AP, FU, NAL}
 
   @frame_prefix <<1::32>>
 
   defmodule State do
     @moduledoc false
 
-    defstruct sps: %{},
-              pps: %{},
+    defstruct vps: [],
+              sps: [],
+              pps: [],
               fu_acc: nil,
+              sprop_max_don_diff: 0,
               seen_key_frame?: false,
               access_unit: [],
               timestamp: nil
@@ -24,9 +24,11 @@ defmodule RTSP.RTP.H264 do
 
   @impl true
   def init(opts) do
-    sps = opts[:sps] && maybe_strip_prefix(opts[:sps])
-    pps = opts[:pps] && maybe_strip_prefix(opts[:pps])
-    %State{sps: List.wrap(sps), pps: List.wrap(pps)}
+    vpss = Keyword.get(opts, :vpss, []) |> Enum.map(&maybe_strip_prefix/1)
+    spss = Keyword.get(opts, :spss, []) |> Enum.map(&maybe_strip_prefix/1)
+    ppss = Keyword.get(opts, :ppss, []) |> Enum.map(&maybe_strip_prefix/1)
+
+    %State{vps: vpss, sps: spss, pps: ppss}
   end
 
   @impl true
@@ -39,12 +41,8 @@ defmodule RTSP.RTP.H264 do
 
   @impl true
   def handle_discontinuity(%State{} = state) do
-    %{state | fu_acc: nil, access_unit: [], timestamp: nil}
+    %State{state | fu_acc: nil, access_unit: [], timestamp: nil}
   end
-
-  defp maybe_strip_prefix(<<0, 0, 1, nalu::binary>>), do: nalu
-  defp maybe_strip_prefix(<<0, 0, 0, 1, nalu::binary>>), do: nalu
-  defp maybe_strip_prefix(nalu), do: nalu
 
   # depayloader
   defp depayload(packet, state) do
@@ -54,38 +52,40 @@ defmodule RTSP.RTP.H264 do
       {:ok, nalus, state}
     else
       {:error, reason} ->
-        {:error, reason, %State{state | fu_acc: nil, access_unit: []}}
+        {:error, reason, %{state | fu_acc: nil, access_unit: []}}
     end
   end
 
-  defp handle_unit_type(:single_nalu, _nal, packet, state) do
+  defp handle_unit_type(:single_nalu, _nalu, packet, state) do
     {:ok, {[packet.payload], packet.timestamp}, state}
   end
 
-  defp handle_unit_type(:fu_a, {header, data}, packet, state) do
+  defp handle_unit_type(:fu, {header, data}, packet, state) do
     %{sequence_number: seq_num} = packet
 
     case FU.parse(data, seq_num, map_state_to_fu(state)) do
-      {:ok, {data, type}} ->
-        data = NAL.Header.add_header(data, 0, header.nal_ref_idc, type)
-        {:ok, {[data], packet.timestamp}, %{state | fu_acc: nil}}
+      {:ok, {data, type, _don}} ->
+        data =
+          NAL.Header.add_header(data, 0, type, header.nuh_layer_id, header.nuh_temporal_id_plus1)
+
+        {:ok, {[data], packet.timestamp}, %State{state | fu_acc: nil}}
 
       {:incomplete, fu} ->
-        {:ok, {[], packet.timestamp}, %{state | fu_acc: fu}}
+        {:ok, {[], packet.timestamp}, %State{state | fu_acc: fu}}
 
       {:error, _reason} = error ->
         error
     end
   end
 
-  defp handle_unit_type(:stap_a, {_header, data}, packet, state) do
-    with {:ok, nalus} <- StapA.parse(data) do
-      {:ok, {nalus, packet.timestamp}, state}
+  defp handle_unit_type(:ap, {_header, data}, packet, state) do
+    with {:ok, nalus} <- AP.parse(data, state.sprop_max_don_diff > 0) do
+      {:ok, {Enum.map(nalus, &elem(&1, 0)), packet.timestamp}, state}
     end
   end
 
   defp map_state_to_fu(%State{fu_acc: %FU{} = fu}), do: fu
-  defp map_state_to_fu(_state), do: %FU{}
+  defp map_state_to_fu(state), do: %FU{donl?: state.sprop_max_don_diff > 0}
 
   # Parser
   defp parse({[], _timestamp}, state), do: {nil, state}
@@ -123,10 +123,13 @@ defmodule RTSP.RTP.H264 do
 
   defp get_parameter_sets(%{access_unit: au} = state) do
     Enum.reduce(au, state, fn
-      <<_::3, 7::5, _rest::binary>> = sps, state ->
+      <<_::1, 32::6, _rest::bitstring>> = vps, state ->
+        %{state | vps: Enum.uniq([vps | state.vps])}
+
+      <<_::1, 33::6, _rest::bitstring>> = sps, state ->
         %{state | sps: Enum.uniq([sps | state.sps])}
 
-      <<_::3, 8::5, _rest::binary>> = pps, state ->
+      <<_::1, 34::6, _rest::bitstring>> = pps, state ->
         %{state | pps: Enum.uniq([pps | state.pps])}
 
       _nalu, state ->
@@ -134,21 +137,21 @@ defmodule RTSP.RTP.H264 do
     end)
   end
 
+  defp maybe_strip_prefix(<<0, 0, 1, nalu::binary>>), do: nalu
+  defp maybe_strip_prefix(<<0, 0, 0, 1, nalu::binary>>), do: nalu
+  defp maybe_strip_prefix(nalu), do: nalu
+
   defp add_parameter_sets(state) do
-    [state.sps, state.pps, state.access_unit]
+    [state.vps, state.sps, state.pps, state.access_unit]
     |> Enum.concat()
     |> then(&%{state | access_unit: &1})
   end
 
-  defp wrap_into_buffer(state, keyframe?) do
+  defp wrap_into_buffer(state, key_frame?) do
     au = Enum.map_join(state.access_unit, &(@frame_prefix <> &1))
-    {au, state.timestamp, keyframe?}
+    {au, state.timestamp, key_frame?}
   end
 
-  defp key_frame?(au) do
-    Enum.any?(au, fn
-      <<_::3, 5::5, _rest::binary>> -> true
-      _nalu -> false
-    end)
-  end
+  defp key_frame?(au),
+    do: Enum.any?(au, fn <<_::1, type::6, _rest::bitstring>> -> type in 16..21 end)
 end

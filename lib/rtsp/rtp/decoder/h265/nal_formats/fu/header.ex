@@ -1,4 +1,4 @@
-defmodule RTSP.RTP.H265.FU.Header do
+defmodule RTSP.RTP.Decoder.H265.FU.Header do
   @moduledoc false
   # Defines a structure representing Fragmentation Unit (FU) header
   # which is defined in [RFC7798](https://tools.ietf.org/html/rfc7798#page-30)
@@ -11,7 +11,7 @@ defmodule RTSP.RTP.H265.FU.Header do
   #  +---------------+
   # ```
 
-  alias RTSP.RTP.H265.NAL
+  alias RTSP.RTP.Decoder.H265.NAL
 
   @typedoc """
   MUST be set to true only in the first packet in a sequence.
