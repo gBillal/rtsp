@@ -230,7 +230,7 @@ defmodule RTSP do
   defp do_handle_data(state, data) do
     datetime = DateTime.utc_now()
 
-    {rtp_packets, _rtcp_packets, unprocessed_data} =
+    {{rtp_packets, _rtcp_packets}, unprocessed_data} =
       split_packets(state.unprocessed_data <> data, state.rtsp_session, {[], []})
 
     stream_handlers =
