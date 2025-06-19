@@ -15,16 +15,16 @@ defmodule RTSP do
 
   The calling process will receive messages in the following format:
 
-    * `{pid_or_name, :discontinuity}` - Indicates a discontinuity in the stream.
-    * `{pid_or_name, control_path, sample}` - Contains the media sample received from the stream.
-      `control_path` is the RTSP control path for the track, and `sample` is the media sample data.
-    * `{pid_or_name, :session_closed}` - Indicates that the RTSP session has been closed.
+    * `{:rtsp, pid_or_name, :discontinuity}` - Indicates a discontinuity in the stream.
+    * `{:rtsp, pid_or_name, {control_path, sample}}` - Contains the media sample received from the stream.
+      `control._path` is the RTSP control path for the track, and `sample` is the media sample data.
+    * `{:rtsp, pid_or_name, :session_closed}` - Indicates that the RTSP session has been closed.
 
-  A `sample` is a tuple in the format `{payload, rtp_timestamp, wallclock_timestamp, key_frame?}`:
+  A `sample` is a tuple in the format `{payload, rtp_timestamp, key_frame?, wallclock_timestamp}`:
     * `payload` - The media payload data (a whole access unit in case of `video`).
     * `rtp_timestamp` - The RTP timestamp of the sample as nano second starting from 0.
-    * `wallclock_timestamp` - The wall clock timestamp when the sample was received.
     * `key_frame?` - A boolean indicating whether the sample is a key frame (valid for `video` streams.)
+    * `wallclock_timestamp` - The wall clock timestamp when the sample was received.
 
   >### TCP and UDP {: .info}
   > Currently only TCP transport is supported. UDP transport will be added in the future.
@@ -115,6 +115,14 @@ defmodule RTSP do
     GenServer.call(pid, :play, timeout)
   end
 
+  @doc """
+  Closes the RTSP session and stops receiving media streams.
+  """
+  @spec stop(pid()) :: :ok
+  def stop(pid) do
+    GenServer.call(pid, :stop)
+  end
+
   @impl true
   def init(opts) do
     state = %State{
@@ -193,6 +201,11 @@ defmodule RTSP do
   end
 
   @impl true
+  def handle_call(:stop, _from, state) do
+    {:reply, :ok, ConnectionManager.clean(state)}
+  end
+
+  @impl true
   def handle_info(:keep_alive, state) do
     {:noreply, ConnectionManager.keep_alive(state)}
   end
@@ -204,7 +217,7 @@ defmodule RTSP do
 
   @impl true
   def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
-    send(state.parent_pid, {state.name, :session_closed})
+    send(state.parent_pid, {:rtsp, state.name, :session_closed})
     {:noreply, ConnectionManager.clean(state)}
   end
 
@@ -252,8 +265,8 @@ defmodule RTSP do
         {discontinuity?, sample, handler} =
           StreamHandler.handle_packet(handlers[ssrc], rtp_packet, datetime)
 
-        if discontinuity?, do: send(state.parent_pid, {state.pid, :discontinuity})
-        if sample, do: send(state.parent_pid, {state.pid, handler.control_path, sample})
+        if discontinuity?, do: send(state.parent_pid, {:rtsp, state.pid, :discontinuity})
+        if sample, do: send(state.parent_pid, {:rtsp, state.pid, {handler.control_path, sample}})
 
         Map.put(handlers, ssrc, handler)
       end)
