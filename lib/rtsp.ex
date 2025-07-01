@@ -34,12 +34,7 @@ defmodule RTSP do
 
   require Logger
 
-  import __MODULE__.PacketSplitter
-
-  alias RTSP.ConnectionManager
-  alias RTSP.RTP.{Decoder, OnvifReplayExtension}
-  alias RTSP.State
-  alias RTSP.StreamHandler
+  alias RTSP.{ConnectionManager, State, TCPReceiver}
 
   @initial_recv_buffer 1_000_000
 
@@ -171,19 +166,17 @@ defmodule RTSP do
 
         pid =
           spawn(fn ->
-            state = %{
-              unprocessed_data: <<>>,
-              stream_handlers: %{},
-              pid: new_state.name,
-              parent_pid: new_state.parent_pid,
-              socket: new_state.socket,
-              timeout: :timer.seconds(10),
-              rtsp_session: new_state.rtsp_session,
-              tracks: new_state.tracks,
-              onvif_replay: new_state.onvif_replay
-            }
+            receiver =
+              TCPReceiver.new(
+                parent_pid: new_state.name,
+                receiver_pid: new_state.parent_pid,
+                socket: new_state.socket,
+                rtsp_session: new_state.rtsp_session,
+                tracks: new_state.tracks,
+                onvif_replay: new_state.onvif_replay
+              )
 
-            receive_data(state)
+            TCPReceiver.start(receiver)
           end)
 
         Process.monitor(pid)
@@ -225,118 +218,5 @@ defmodule RTSP do
   def handle_info(msg, state) do
     Logger.warning("Received unexpected message: #{inspect(msg)}")
     {:noreply, state}
-  end
-
-  defp receive_data(state) do
-    case :gen_tcp.recv(state.socket, 0, state.timeout) do
-      {:ok, data} ->
-        state
-        |> do_handle_data(data)
-        |> receive_data()
-
-      {:error, reason} ->
-        Logger.error("Error receiving data: #{inspect(reason)}")
-        :ok
-    end
-  end
-
-  defp do_handle_data(state, data) do
-    datetime = DateTime.utc_now()
-
-    {{rtp_packets, _rtcp_packets}, unprocessed_data} =
-      split_packets(state.unprocessed_data <> data, state.rtsp_session, {[], []})
-
-    stream_handlers =
-      rtp_packets
-      |> Stream.map(&decode_rtp!/1)
-      |> Stream.map(&decode_onvif_replay_extension/1)
-      |> Enum.reduce(state.stream_handlers, fn %{ssrc: ssrc} = rtp_packet, handlers ->
-        handlers = maybe_init_stream_handler(state, handlers, rtp_packet)
-
-        datetime =
-          case state do
-            %State{onvif_replay: true} ->
-              rtp_packet.extensions && rtp_packet.extensions.timestamp
-
-            _state ->
-              datetime
-          end
-
-        {discontinuity?, sample, handler} =
-          StreamHandler.handle_packet(handlers[ssrc], rtp_packet, datetime)
-
-        if discontinuity?, do: send(state.parent_pid, {:rtsp, state.pid, :discontinuity})
-        if sample, do: send(state.parent_pid, {:rtsp, state.pid, {handler.control_path, sample}})
-
-        Map.put(handlers, ssrc, handler)
-      end)
-
-    %{state | unprocessed_data: unprocessed_data, stream_handlers: stream_handlers}
-  end
-
-  defp decode_rtp!(packet) do
-    case ExRTP.Packet.decode(packet) do
-      {:ok, packet} ->
-        packet
-
-      _error ->
-        raise """
-        invalid rtp packet
-        #{inspect(packet, limit: :infinity)}
-        """
-    end
-  end
-
-  defp decode_onvif_replay_extension(%ExRTP.Packet{extension_profile: 0xABAC} = packet) do
-    extension = OnvifReplayExtension.decode(packet.extensions)
-    %{packet | extensions: extension}
-  end
-
-  defp decode_onvif_replay_extension(packet), do: packet
-
-  defp maybe_init_stream_handler(_state, handlers, %{ssrc: ssrc}) when is_map_key(handlers, ssrc),
-    do: handlers
-
-  defp maybe_init_stream_handler(state, handlers, packet) do
-    track = Enum.find(state.tracks, &(&1.rtpmap.payload_type == packet.payload_type))
-
-    encoding = String.to_atom(track.rtpmap.encoding)
-    {parser_mod, parser_state} = parser(encoding, track.fmtp)
-
-    stream_handler = %StreamHandler{
-      clock_rate: track.rtpmap.clock_rate,
-      parser_mod: parser_mod,
-      parser_state: parser_state,
-      control_path: track.control_path
-    }
-
-    Map.put(handlers, packet.ssrc, stream_handler)
-  end
-
-  defp parser(:H264, fmtp) do
-    sps = fmtp.sprop_parameter_sets && fmtp.sprop_parameter_sets.sps
-    pps = fmtp.sprop_parameter_sets && fmtp.sprop_parameter_sets.pps
-
-    {Decoder.H264, Decoder.H264.init(sps: sps, pps: pps)}
-  end
-
-  defp parser(:H265, fmtp) do
-    parser_state =
-      Decoder.H265.init(
-        vpss: List.wrap(fmtp && fmtp.sprop_vps) |> Enum.map(&clean_parameter_set/1),
-        spss: List.wrap(fmtp && fmtp.sprop_sps) |> Enum.map(&clean_parameter_set/1),
-        ppss: List.wrap(fmtp && fmtp.sprop_pps) |> Enum.map(&clean_parameter_set/1)
-      )
-
-    {Decoder.H265, parser_state}
-  end
-
-  # An issue with one of Milesight camera where the parameter sets have
-  # <<0, 0, 0, 1>> at the end
-  defp clean_parameter_set(ps) do
-    case :binary.part(ps, byte_size(ps), -4) do
-      <<0, 0, 0, 1>> -> :binary.part(ps, 0, byte_size(ps) - 4)
-      _other -> ps
-    end
   end
 end

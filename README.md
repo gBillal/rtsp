@@ -17,7 +17,7 @@ Start the client, connect and start receiving media
 
 The current process will receive media stream:
 ```elixir
-{pid_or_name, control_path, {sample, rtp_timestamp, timestamp, key_frame?}}
+{:rtsp, pid_or_name, {control_path, {sample, rtp_timestamp, timestamp, key_frame?}}}
 ```
 
 ## Installation
