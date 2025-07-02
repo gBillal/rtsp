@@ -9,8 +9,6 @@ defmodule RTSP.RTP.Decoder.H264 do
 
   alias RTSP.RTP.Decoder.H264.{FU, NAL, StapA}
 
-  @frame_prefix <<1::32>>
-
   defmodule State do
     @moduledoc false
 
@@ -59,7 +57,7 @@ defmodule RTSP.RTP.Decoder.H264 do
   end
 
   defp handle_unit_type(:single_nalu, _nal, packet, state) do
-    {:ok, {[packet.payload], packet.timestamp}, state}
+    {:ok, {[packet.payload], packet.timestamp, packet.marker}, state}
   end
 
   defp handle_unit_type(:fu_a, {header, data}, packet, state) do
@@ -68,10 +66,10 @@ defmodule RTSP.RTP.Decoder.H264 do
     case FU.parse(data, seq_num, map_state_to_fu(state)) do
       {:ok, {data, type}} ->
         data = NAL.Header.add_header(data, 0, header.nal_ref_idc, type)
-        {:ok, {[data], packet.timestamp}, %{state | fu_acc: nil}}
+        {:ok, {[data], packet.timestamp, packet.marker}, %{state | fu_acc: nil}}
 
       {:incomplete, fu} ->
-        {:ok, {[], packet.timestamp}, %{state | fu_acc: fu}}
+        {:ok, {[], packet.timestamp, false}, %{state | fu_acc: fu}}
 
       {:error, _reason} = error ->
         error
@@ -80,7 +78,7 @@ defmodule RTSP.RTP.Decoder.H264 do
 
   defp handle_unit_type(:stap_a, {_header, data}, packet, state) do
     with {:ok, nalus} <- StapA.parse(data) do
-      {:ok, {nalus, packet.timestamp}, state}
+      {:ok, {nalus, packet.timestamp, packet.marker}, state}
     end
   end
 
@@ -88,14 +86,19 @@ defmodule RTSP.RTP.Decoder.H264 do
   defp map_state_to_fu(_state), do: %FU{}
 
   # Parser
-  defp parse({[], _timestamp}, state), do: {nil, state}
+  defp parse({[], _timestamp, _marker}, state), do: {nil, state}
 
-  defp parse({nalus, timestamp}, state) do
-    if timestamp != state.timestamp do
-      {sample, state} = process_au(state)
-      {sample, %{state | timestamp: timestamp, access_unit: nalus}}
-    else
-      {nil, %{state | access_unit: state.access_unit ++ nalus}}
+  defp parse({nalus, timestamp, marker}, state) do
+    cond do
+      marker ->
+        process_au(%{state | access_unit: state.access_unit ++ nalus, timestamp: timestamp})
+
+      timestamp != state.timestamp ->
+        {sample, state} = process_au(state)
+        {sample, %{state | timestamp: timestamp, access_unit: nalus}}
+
+      true ->
+        {nil, %{state | access_unit: state.access_unit ++ nalus}}
     end
   end
 
@@ -104,21 +107,24 @@ defmodule RTSP.RTP.Decoder.H264 do
   defp process_au(state) do
     key_frame? = key_frame?(state.access_unit)
 
-    cond do
-      key_frame? ->
-        state =
-          state
-          |> get_parameter_sets()
-          |> add_parameter_sets()
+    {sample, state} =
+      cond do
+        key_frame? ->
+          state =
+            state
+            |> get_parameter_sets()
+            |> add_parameter_sets()
 
-        {wrap_into_buffer(state, key_frame?), %{state | seen_key_frame?: true}}
+          {convert_to_tuple(state, key_frame?), %{state | seen_key_frame?: true}}
 
-      state.seen_key_frame? ->
-        {wrap_into_buffer(state, key_frame?), state}
+        state.seen_key_frame? ->
+          {convert_to_tuple(state, key_frame?), state}
 
-      true ->
-        {nil, state}
-    end
+        true ->
+          {nil, state}
+      end
+
+    {sample, %{state | access_unit: []}}
   end
 
   defp get_parameter_sets(%{access_unit: au} = state) do
@@ -140,9 +146,8 @@ defmodule RTSP.RTP.Decoder.H264 do
     |> then(&%{state | access_unit: &1})
   end
 
-  defp wrap_into_buffer(state, keyframe?) do
-    au = Enum.map_join(state.access_unit, &(@frame_prefix <> &1))
-    {au, state.timestamp, keyframe?}
+  defp convert_to_tuple(state, keyframe?) do
+    {state.access_unit, state.timestamp, keyframe?}
   end
 
   defp key_frame?(au) do
