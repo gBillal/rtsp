@@ -7,8 +7,6 @@ defmodule RTSP.RTP.Decoder.H265 do
 
   alias __MODULE__.{AP, FU, NAL}
 
-  @frame_prefix <<1::32>>
-
   defmodule State do
     @moduledoc false
 
@@ -24,11 +22,11 @@ defmodule RTSP.RTP.Decoder.H265 do
 
   @impl true
   def init(opts) do
-    vpss = Keyword.get(opts, :vpss, []) |> Enum.map(&maybe_strip_prefix/1)
-    spss = Keyword.get(opts, :spss, []) |> Enum.map(&maybe_strip_prefix/1)
-    ppss = Keyword.get(opts, :ppss, []) |> Enum.map(&maybe_strip_prefix/1)
+    vps = Keyword.get(opts, :vps, []) |> Enum.map(&maybe_strip_prefix/1)
+    sps = Keyword.get(opts, :sps, []) |> Enum.map(&maybe_strip_prefix/1)
+    pps = Keyword.get(opts, :pps, []) |> Enum.map(&maybe_strip_prefix/1)
 
-    %State{vps: vpss, sps: spss, pps: ppss}
+    %State{vps: vps, sps: sps, pps: pps}
   end
 
   @impl true
@@ -57,7 +55,7 @@ defmodule RTSP.RTP.Decoder.H265 do
   end
 
   defp handle_unit_type(:single_nalu, _nalu, packet, state) do
-    {:ok, {[packet.payload], packet.timestamp}, state}
+    {:ok, {[packet.payload], packet.timestamp, packet.marker}, state}
   end
 
   defp handle_unit_type(:fu, {header, data}, packet, state) do
@@ -68,10 +66,10 @@ defmodule RTSP.RTP.Decoder.H265 do
         data =
           NAL.Header.add_header(data, 0, type, header.nuh_layer_id, header.nuh_temporal_id_plus1)
 
-        {:ok, {[data], packet.timestamp}, %State{state | fu_acc: nil}}
+        {:ok, {[data], packet.timestamp, packet.marker}, %State{state | fu_acc: nil}}
 
       {:incomplete, fu} ->
-        {:ok, {[], packet.timestamp}, %State{state | fu_acc: fu}}
+        {:ok, {[], packet.timestamp, false}, %State{state | fu_acc: fu}}
 
       {:error, _reason} = error ->
         error
@@ -80,7 +78,7 @@ defmodule RTSP.RTP.Decoder.H265 do
 
   defp handle_unit_type(:ap, {_header, data}, packet, state) do
     with {:ok, nalus} <- AP.parse(data, state.sprop_max_don_diff > 0) do
-      {:ok, {Enum.map(nalus, &elem(&1, 0)), packet.timestamp}, state}
+      {:ok, {Enum.map(nalus, &elem(&1, 0)), packet.timestamp, packet.marker}, state}
     end
   end
 
@@ -88,14 +86,19 @@ defmodule RTSP.RTP.Decoder.H265 do
   defp map_state_to_fu(state), do: %FU{donl?: state.sprop_max_don_diff > 0}
 
   # Parser
-  defp parse({[], _timestamp}, state), do: {nil, state}
+  defp parse({[], _timestamp, _marker}, state), do: {nil, state}
 
-  defp parse({nalus, timestamp}, state) do
-    if timestamp != state.timestamp do
-      {sample, state} = process_au(state)
-      {sample, %{state | timestamp: timestamp, access_unit: nalus}}
-    else
-      {nil, %{state | access_unit: state.access_unit ++ nalus}}
+  defp parse({nalus, timestamp, marker}, state) do
+    cond do
+      marker ->
+        process_au(%{state | access_unit: state.access_unit ++ nalus, timestamp: timestamp})
+
+      timestamp != state.timestamp ->
+        {sample, state} = process_au(state)
+        {sample, %{state | timestamp: timestamp, access_unit: nalus}}
+
+      true ->
+        {nil, %{state | access_unit: state.access_unit ++ nalus}}
     end
   end
 
@@ -104,21 +107,24 @@ defmodule RTSP.RTP.Decoder.H265 do
   defp process_au(state) do
     key_frame? = key_frame?(state.access_unit)
 
-    cond do
-      key_frame? ->
-        state =
-          state
-          |> get_parameter_sets()
-          |> add_parameter_sets()
+    {sample, state} =
+      cond do
+        key_frame? ->
+          state =
+            state
+            |> get_parameter_sets()
+            |> add_parameter_sets()
 
-        {wrap_into_buffer(state, key_frame?), %{state | seen_key_frame?: true}}
+          {convert_to_tuple(state, key_frame?), %{state | seen_key_frame?: true}}
 
-      state.seen_key_frame? ->
-        {wrap_into_buffer(state, key_frame?), state}
+        state.seen_key_frame? ->
+          {convert_to_tuple(state, key_frame?), state}
 
-      true ->
-        {nil, state}
-    end
+        true ->
+          {nil, state}
+      end
+
+    {sample, %{state | access_unit: []}}
   end
 
   defp get_parameter_sets(%{access_unit: au} = state) do
@@ -147,9 +153,8 @@ defmodule RTSP.RTP.Decoder.H265 do
     |> then(&%{state | access_unit: &1})
   end
 
-  defp wrap_into_buffer(state, key_frame?) do
-    au = Enum.map_join(state.access_unit, &(@frame_prefix <> &1))
-    {au, state.timestamp, key_frame?}
+  defp convert_to_tuple(state, key_frame?) do
+    {state.access_unit, state.timestamp, key_frame?}
   end
 
   defp key_frame?(au),
