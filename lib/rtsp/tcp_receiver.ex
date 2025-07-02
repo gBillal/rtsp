@@ -101,7 +101,7 @@ defmodule RTSP.TCPReceiver do
 
   defp decode_onvif_replay_extension(%ExRTP.Packet{extension_profile: 0xABAC} = packet) do
     extension = OnvifReplayExtension.decode(packet.extensions)
-    %{packet | extensions: extension}
+    %{packet | extensions: [extension]}
   end
 
   defp decode_onvif_replay_extension(packet), do: packet
