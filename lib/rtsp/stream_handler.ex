@@ -6,7 +6,6 @@ defmodule RTSP.StreamHandler do
 
   alias RTSP.RTP.OnvifReplayExtension
 
-  @second 10 ** 9
   @timestamp_limit Bitwise.bsl(1, 32)
   @seq_number_limit Bitwise.bsl(1, 16)
   @max_replay_timestamp_diff 10
@@ -90,7 +89,7 @@ defmodule RTSP.StreamHandler do
         :current -> timestamp_base
       end
 
-    timestamp = div((rtp_timestamp - timestamp_base) * @second, handler.clock_rate)
+    timestamp = rtp_timestamp - timestamp_base
     {%{handler | timestamps: {timestamp_base, rtp_timestamp}}, %{packet | timestamp: timestamp}}
   end
 
@@ -138,10 +137,8 @@ defmodule RTSP.StreamHandler do
 
   defp set_wallclock_timestamp(handler, _wallclock_timestamp), do: handler
 
-  defp set_last_replay_timestamp(handler, %{
-         extensions: %OnvifReplayExtension{timestamp: timestamp}
-       }) do
-    %{handler | last_replay_timestamp: timestamp}
+  defp set_last_replay_timestamp(handler, %{extensions: [%OnvifReplayExtension{} = ex]}) do
+    %{handler | last_replay_timestamp: ex.timestamp}
   end
 
   defp set_last_replay_timestamp(handler, _packet), do: handler
