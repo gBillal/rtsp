@@ -143,6 +143,14 @@ defmodule RTSP.TCPReceiver do
     {Decoder.H265, parser_state}
   end
 
+  defp parser(:"mpeg4-generic", %{mode: :AAC_hbr}) do
+    {Decoder.MPEG4Audio, Decoder.MPEG4Audio.init(:hbr)}
+  end
+
+  defp parser(:"mpeg4-generic", %{mode: :AAC_lbr}) do
+    {Decoder.MPEG4Audio, Decoder.MPEG4Audio.init(:lbr)}
+  end
+
   # An issue with one of Milesight camera where the parameter sets have
   # <<0, 0, 0, 1>> at the end
   defp clean_parameter_set(ps) do

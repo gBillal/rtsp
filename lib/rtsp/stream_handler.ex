@@ -98,9 +98,9 @@ defmodule RTSP.StreamHandler do
       {:ok, nil, state} ->
         {nil, %{handler | parser_state: state}}
 
-      {:ok, {sample, rtp_timestamp, keyframe?}, state} ->
-        {{sample, rtp_timestamp, keyframe?, handler.wallclock_timestamp},
-         %{handler | parser_state: state, wallclock_timestamp: wallclock_timestamp}}
+      {:ok, sample, state} ->
+        handler = %{handler | parser_state: state, wallclock_timestamp: wallclock_timestamp}
+        {map_sample(sample, wallclock_timestamp), handler}
 
       {:error, reason, state} ->
         Logger.warning("""
@@ -142,4 +142,12 @@ defmodule RTSP.StreamHandler do
   end
 
   defp set_last_replay_timestamp(handler, _packet), do: handler
+
+  defp map_sample(samples, wallclock_timestamp) when is_list(samples) do
+    Enum.map(samples, &map_sample(&1, wallclock_timestamp))
+  end
+
+  defp map_sample(sample, wallclock_timestamp) do
+    Tuple.insert_at(sample, 3, wallclock_timestamp)
+  end
 end
