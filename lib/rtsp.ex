@@ -16,7 +16,7 @@ defmodule RTSP do
   The calling process will receive messages in the following format:
 
     * `{:rtsp, pid_or_name, :discontinuity}` - Indicates a discontinuity in the stream.
-    * `{:rtsp, pid_or_name, {control_path, sample}}` - Contains the media sample received from the stream.
+    * `{:rtsp, pid_or_name, {control_path, sample_or_samples}}` - Contains the media sample received from the stream.
       `control._path` is the RTSP control path for the track, and `sample` is the media sample data.
     * `{:rtsp, pid_or_name, :session_closed}` - Indicates that the RTSP session has been closed.
 
