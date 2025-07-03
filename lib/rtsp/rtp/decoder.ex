@@ -15,7 +15,8 @@ defmodule RTSP.RTP.Decoder do
   @doc """
   Invoked when a new RTP packet is received
   """
-  @callback handle_packet(ExRTP.Packet.t(), state()) :: {:ok, sample(), state()} | {:error, any()}
+  @callback handle_packet(ExRTP.Packet.t(), state()) ::
+              {:ok, sample() | [sample()], state()} | {:error, any()}
 
   @doc """
   Invoked when a discontinuity occurred.
