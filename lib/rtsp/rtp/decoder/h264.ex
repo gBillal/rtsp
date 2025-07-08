@@ -7,6 +7,7 @@ defmodule RTSP.RTP.Decoder.H264 do
 
   require Logger
 
+  alias MediaCodecs.H264.NALU
   alias RTSP.RTP.Decoder.H264.{FU, NAL, StapA}
 
   defmodule State do
@@ -24,7 +25,8 @@ defmodule RTSP.RTP.Decoder.H264 do
   def init(opts) do
     sps = opts[:sps] && maybe_strip_prefix(opts[:sps])
     pps = opts[:pps] && maybe_strip_prefix(opts[:pps])
-    %State{sps: List.wrap(sps), pps: List.wrap(pps)}
+
+    update_parameter_sets(List.wrap(sps), List.wrap(pps), %State{})
   end
 
   @impl true
@@ -105,16 +107,15 @@ defmodule RTSP.RTP.Decoder.H264 do
   defp process_au(%{access_unit: []} = state), do: {nil, state}
 
   defp process_au(state) do
-    key_frame? = key_frame?(state.access_unit)
+    {sps, pps, key_frame?, first_vcl_nalu, access_unit} = parse_access_unit(state.access_unit)
+
+    access_unit = Enum.reverse(access_unit)
+    state = update_parameter_sets(sps, pps, state)
 
     {sample, state} =
       cond do
         key_frame? ->
-          state =
-            state
-            |> get_parameter_sets()
-            |> add_parameter_sets()
-
+          state = %{state | access_unit: get_parameter_sets(state, first_vcl_nalu) ++ access_unit}
           {convert_to_tuple(state, key_frame?), %{state | seen_key_frame?: true}}
 
         state.seen_key_frame? ->
@@ -127,33 +128,58 @@ defmodule RTSP.RTP.Decoder.H264 do
     {sample, %{state | access_unit: []}}
   end
 
-  defp get_parameter_sets(%{access_unit: au} = state) do
-    Enum.reduce(au, state, fn
-      <<_::3, 7::5, _rest::binary>> = sps, state ->
-        %{state | sps: Enum.uniq([sps | state.sps])}
+  defp update_parameter_sets([], [], state), do: state
 
-      <<_::3, 8::5, _rest::binary>> = pps, state ->
-        %{state | pps: Enum.uniq([pps | state.pps])}
+  defp update_parameter_sets(sps, pps, state) do
+    sps = Map.new(sps, &{NALU.SPS.id(&1), &1})
 
-      _nalu, state ->
-        state
-    end)
+    pps =
+      Map.new(pps, fn nalu ->
+        pps = NALU.PPS.parse(nalu)
+        {pps.pic_parameter_set_id, {pps.seq_parameter_set_id, nalu}}
+      end)
+
+    %State{state | sps: Map.merge(state.sps, sps), pps: Map.merge(state.pps, pps)}
   end
 
-  defp add_parameter_sets(state) do
-    [state.sps, state.pps, state.access_unit]
-    |> Enum.concat()
-    |> then(&%{state | access_unit: &1})
+  defp get_parameter_sets(state, first_vcl_nalu) do
+    pic_parameter_set_id = NALU.Slice.parse(first_vcl_nalu).pic_parameter_set_id
+    seq_parameter_set_id = state.pps[pic_parameter_set_id] |> elem(0)
+
+    pps =
+      state.pps
+      |> Map.values()
+      |> Enum.filter(&(elem(&1, 0) == seq_parameter_set_id))
+      |> Enum.map(&elem(&1, 1))
+
+    [state.sps[seq_parameter_set_id] | pps]
   end
 
   defp convert_to_tuple(state, keyframe?) do
     {state.access_unit, state.timestamp, keyframe?}
   end
 
-  defp key_frame?(au) do
-    Enum.any?(au, fn
-      <<_::3, 5::5, _rest::binary>> -> true
-      _nalu -> false
+  defp parse_access_unit(access_unit) do
+    Enum.reduce(access_unit, {[], [], false, nil, []}, fn nalu_data,
+                                                          {sps, pps, keyframe?, first_vcl_nalu,
+                                                           access_unit} ->
+      nalu = NALU.parse_header(nalu_data)
+
+      case nalu.type do
+        :sps ->
+          {[nalu_data | sps], pps, keyframe?, first_vcl_nalu, access_unit}
+
+        :pps ->
+          {sps, [nalu_data | pps], keyframe?, first_vcl_nalu, access_unit}
+
+        _type ->
+          keyframe? = keyframe? or NALU.keyframe?(nalu)
+
+          first_vcl_nalu =
+            if is_nil(first_vcl_nalu) and NALU.vcl?(nalu), do: nalu_data, else: first_vcl_nalu
+
+          {sps, pps, keyframe?, first_vcl_nalu, [nalu_data | access_unit]}
+      end
     end)
   end
 end

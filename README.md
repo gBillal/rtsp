@@ -17,7 +17,7 @@ Start the client, connect and start receiving media
 
 The current process will receive media stream:
 ```elixir
-{:rtsp, pid_or_name, {control_path, {sample, rtp_timestamp, timestamp, key_frame?}}}
+{:rtsp, pid_or_name, {control_path, {sample, rtp_timestamp, key_frame?, timestamp}}}
 ```
 
 ## Installation
@@ -27,7 +27,7 @@ The package can be installed by adding `rtsp` to your list of dependencies in `m
 ```elixir
 def deps do
   [
-    {:rtsp, "~> 0.2.0"}
+    {:rtsp, "~> 0.3.0"}
   ]
 end
 ```

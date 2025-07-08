@@ -5,14 +5,15 @@ defmodule RTSP.RTP.Decoder.H265 do
 
   @behaviour RTSP.RTP.Decoder
 
+  alias MediaCodecs.H265.NALU
   alias __MODULE__.{AP, FU, NAL}
 
   defmodule State do
     @moduledoc false
 
-    defstruct vps: [],
-              sps: [],
-              pps: [],
+    defstruct vps: %{},
+              sps: %{},
+              pps: %{},
               fu_acc: nil,
               sprop_max_don_diff: 0,
               seen_key_frame?: false,
@@ -26,7 +27,7 @@ defmodule RTSP.RTP.Decoder.H265 do
     sps = Keyword.get(opts, :sps, []) |> Enum.map(&maybe_strip_prefix/1)
     pps = Keyword.get(opts, :pps, []) |> Enum.map(&maybe_strip_prefix/1)
 
-    %State{vps: vps, sps: sps, pps: pps}
+    update_parameter_sets(vps, sps, pps, %State{})
   end
 
   @impl true
@@ -105,16 +106,16 @@ defmodule RTSP.RTP.Decoder.H265 do
   defp process_au(%{access_unit: []} = state), do: {nil, state}
 
   defp process_au(state) do
-    key_frame? = key_frame?(state.access_unit)
+    {vps, sps, pps, key_frame?, first_vcl_nalu, access_unit} =
+      parse_access_unit(state.access_unit)
+
+    access_unit = Enum.reverse(access_unit)
+    state = update_parameter_sets(vps, sps, pps, state)
 
     {sample, state} =
       cond do
         key_frame? ->
-          state =
-            state
-            |> get_parameter_sets()
-            |> add_parameter_sets()
-
+          state = %{state | access_unit: get_parameter_sets(state, first_vcl_nalu) ++ access_unit}
           {convert_to_tuple(state, key_frame?), %{state | seen_key_frame?: true}}
 
         state.seen_key_frame? ->
@@ -127,36 +128,76 @@ defmodule RTSP.RTP.Decoder.H265 do
     {sample, %{state | access_unit: []}}
   end
 
-  defp get_parameter_sets(%{access_unit: au} = state) do
-    Enum.reduce(au, state, fn
-      <<_::1, 32::6, _rest::bitstring>> = vps, state ->
-        %{state | vps: Enum.uniq([vps | state.vps])}
+  defp update_parameter_sets([], [], [], state), do: state
 
-      <<_::1, 33::6, _rest::bitstring>> = sps, state ->
-        %{state | sps: Enum.uniq([sps | state.sps])}
+  defp update_parameter_sets(vps, sps, pps, state) do
+    vps = Map.new(vps, &{NALU.VPS.id(&1), &1})
+    sps = Map.new(sps, &{NALU.SPS.id(&1), &1})
 
-      <<_::1, 34::6, _rest::bitstring>> = pps, state ->
-        %{state | pps: Enum.uniq([pps | state.pps])}
+    pps =
+      Map.new(pps, fn nalu ->
+        pps = NALU.PPS.parse(nalu)
+        {pps.pic_parameter_set_id, {pps.seq_parameter_set_id, nalu}}
+      end)
 
-      _nalu, state ->
-        state
-    end)
+    %State{
+      state
+      | vps: Map.merge(state.vps, vps),
+        sps: Map.merge(state.sps, sps),
+        pps: Map.merge(state.pps, pps)
+    }
+  end
+
+  defp get_parameter_sets(state, first_vcl_nalu) do
+    pic_parameter_set_id = NALU.Slice.parse(first_vcl_nalu).pic_parameter_set_id
+    seq_parameter_set_id = state.pps[pic_parameter_set_id] |> elem(0)
+
+    sps = state.sps[seq_parameter_set_id]
+    vps = state.vps[NALU.SPS.video_parameter_set_id(sps)]
+
+    pps =
+      state.pps
+      |> Map.values()
+      |> Enum.filter(&(elem(&1, 0) == seq_parameter_set_id))
+      |> Enum.map(&elem(&1, 1))
+
+    [vps, sps | pps]
   end
 
   defp maybe_strip_prefix(<<0, 0, 1, nalu::binary>>), do: nalu
   defp maybe_strip_prefix(<<0, 0, 0, 1, nalu::binary>>), do: nalu
   defp maybe_strip_prefix(nalu), do: nalu
 
-  defp add_parameter_sets(state) do
-    [state.vps, state.sps, state.pps, state.access_unit]
-    |> Enum.concat()
-    |> then(&%{state | access_unit: &1})
-  end
-
   defp convert_to_tuple(state, key_frame?) do
     {state.access_unit, state.timestamp, key_frame?}
   end
 
-  defp key_frame?(au),
-    do: Enum.any?(au, fn <<_::1, type::6, _rest::bitstring>> -> type in 16..21 end)
+  defp parse_access_unit(access_unit) do
+    Enum.reduce(access_unit, {[], [], [], false, nil, []}, fn nalu_data,
+                                                              {vps, sps, pps, keyframe?,
+                                                               first_vcl_nalu, access_unit} ->
+      nalu = NALU.parse_header(nalu_data)
+
+      case nalu.type do
+        :vps ->
+          {[nalu_data | vps], sps, pps, keyframe?, first_vcl_nalu, access_unit}
+
+        :sps ->
+          {vps, [nalu_data | sps], pps, keyframe?, first_vcl_nalu, access_unit}
+
+        :pps ->
+          {vps, sps, [nalu_data | pps], keyframe?, first_vcl_nalu, access_unit}
+
+        _type ->
+          keyframe? = keyframe? or NALU.keyframe?(nalu)
+
+          first_vcl_nalu =
+            if is_nil(first_vcl_nalu) and NALU.vcl?(nalu_data),
+              do: nalu_data,
+              else: first_vcl_nalu
+
+          {vps, sps, pps, keyframe?, first_vcl_nalu, [nalu_data | access_unit]}
+      end
+    end)
+  end
 end

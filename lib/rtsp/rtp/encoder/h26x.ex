@@ -7,7 +7,6 @@ defmodule RTSP.RTP.Encoder.H26x do
   alias RTSP.RTP.Decoder.H264
   alias RTSP.RTP.Decoder.H265
 
-  @nalu_prefixes [<<1::24>>, <<1::32>>]
   @max_rtp_seq_no (1 <<< 16) - 1
 
   def init(options, codec) do
@@ -20,11 +19,17 @@ defmodule RTSP.RTP.Encoder.H26x do
     }
   end
 
-  def handle_sample(au, timestamp, state) do
+  def handle_sample(au, timestamp, state) when is_list(au) do
+    do_handle_sample(au, timestamp, state)
+  end
+
+  def handle_sample(au, timestamp, state) when is_binary(au) do
+    do_handle_sample(MediaCodecs.H264.nalus(au), timestamp, state)
+  end
+
+  defp do_handle_sample(nalus, timestamp, state) do
     {packets, state, acc, _size} =
-      au
-      |> :binary.split(@nalu_prefixes, [:global, :trim_all])
-      |> Enum.reduce({[], state, [], 0}, fn nalu, {packets, state, acc, size} ->
+      Enum.reduce(nalus, {[], state, [], 0}, fn nalu, {packets, state, acc, size} ->
         cond do
           acc == [] and byte_size(nalu) > state.max_payload_size ->
             {new_packets, state} = encode(nalu, timestamp, state)
