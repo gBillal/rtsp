@@ -16,7 +16,7 @@ defmodule RTSP.UDPReceiver do
     @moduledoc false
 
     @type t :: %__MODULE__{
-            receiver_pid: pid(),
+            receiver: pid(),
             parent_pid: pid(),
             socket: :inet.socket(),
             rtcp_socket: :inet.socket(),
@@ -26,7 +26,7 @@ defmodule RTSP.UDPReceiver do
             timeout: non_neg_integer()
           }
 
-    defstruct receiver_pid: nil,
+    defstruct receiver: nil,
               parent_pid: nil,
               socket: nil,
               rtcp_socket: nil,
@@ -94,15 +94,17 @@ defmodule RTSP.UDPReceiver do
           StreamHandler.handle_packet(handler, rtp_packet, datetime)
 
         if discontinuity? do
-          send(receiver.receiver_pid, {:rtsp, receiver.parent_pid, :discontinuity})
+          send(receiver.receiver, {:rtsp, receiver.parent_pid, :discontinuity})
         end
 
         if sample do
           send(
-            receiver.receiver_pid,
+            receiver.receiver,
             {:rtsp, receiver.parent_pid, {handler.control_path, sample}}
           )
         end
+
+        handler
       end)
 
     %{receiver | stream_handler: handler, packet_reorderer: packet_reorderer}

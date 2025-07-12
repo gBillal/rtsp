@@ -31,6 +31,7 @@ defmodule RTSP.MixProject do
 
   defp deps do
     [
+      {:nimble_options, "~> 1.0"},
       {:ex_sdp, "~> 1.0"},
       {:ex_rtp, "~> 0.4.0"},
       {:ex_rtcp, "~> 0.4.0"},

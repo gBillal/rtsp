@@ -15,26 +15,24 @@ defmodule RTSP.State do
           keep_alive_timer: reference() | nil,
           check_recbuf_timer: reference() | nil,
           socket: :inet.socket() | nil,
-          onvif_replay: boolean(),
-          start_date: DateTime.t(),
-          end_date: DateTime.t(),
-          parent_pid: pid(),
+          udp_receivers: [pid()],
+          onvif_replay: Keyword.t(),
+          receiver: pid(),
           name: atom() | pid()
         }
 
-  @enforce_keys [:stream_uri, :allowed_media_types, :timeout, :keep_alive_interval, :parent_pid]
+  @enforce_keys [:stream_uri, :allowed_media_types, :timeout, :keep_alive_interval, :receiver]
   defstruct @enforce_keys ++
               [
                 state: :init,
                 socket: nil,
+                udp_receivers: [],
                 transport: :tcp,
                 tracks: [],
                 rtsp_session: nil,
                 keep_alive_timer: nil,
                 check_recbuf_timer: nil,
-                onvif_replay: false,
-                start_date: nil,
-                end_date: nil,
+                onvif_replay: [],
                 name: nil
               ]
 end

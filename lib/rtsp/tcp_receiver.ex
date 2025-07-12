@@ -11,7 +11,7 @@ defmodule RTSP.TCPReceiver do
 
   @type t :: %__MODULE__{
           parent_pid: pid(),
-          receiver_pid: pid(),
+          receiver: pid(),
           socket: :inet.socket(),
           rtsp_session: Membrane.RTSP.t(),
           tracks: [RTSP.track()],
@@ -21,7 +21,7 @@ defmodule RTSP.TCPReceiver do
           timeout: non_neg_integer()
         }
 
-  @enforce_keys [:receiver_pid, :parent_pid, :socket, :rtsp_session, :tracks]
+  @enforce_keys [:receiver, :parent_pid, :socket, :rtsp_session, :tracks]
   defstruct @enforce_keys ++
               [
                 onvif_replay: false,
@@ -72,12 +72,12 @@ defmodule RTSP.TCPReceiver do
           StreamHandler.handle_packet(handlers[ssrc], rtp_packet, datetime)
 
         if discontinuity?,
-          do: send(receiver.receiver_pid, {:rtsp, receiver.parent_pid, :discontinuity})
+          do: send(receiver.receiver, {:rtsp, receiver.parent_pid, :discontinuity})
 
         if sample,
           do:
             send(
-              receiver.receiver_pid,
+              receiver.receiver,
               {:rtsp, receiver.parent_pid, {handler.control_path, sample}}
             )
 
