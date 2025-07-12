@@ -103,12 +103,7 @@ defmodule RTSP.StreamHandler do
         {map_sample(sample, wallclock_timestamp), handler}
 
       {:error, reason, state} ->
-        Logger.warning("""
-        Could not depayload rtp packet, ignoring...
-        Error reason: #{inspect(reason)}
-        Packet: #{inspect(packet, limit: :infinity)}
-        """)
-
+        log_error(packet, reason)
         {nil, %{handler | parser_state: state}}
     end
   end
@@ -149,5 +144,17 @@ defmodule RTSP.StreamHandler do
 
   defp map_sample(sample, wallclock_timestamp) do
     Tuple.insert_at(sample, 3, wallclock_timestamp)
+  end
+
+  defp log_error(_packet, :invalid_first_packet) do
+    Logger.warning("Could not depayload rtp packet: Invalid first packet")
+  end
+
+  defp log_error(packet, reason) do
+    Logger.warning("""
+    Could not depayload rtp packet, ignoring...
+    Error reason: #{inspect(reason)}
+    Packet: #{inspect(packet, limit: :infinity)}
+    """)
   end
 end
