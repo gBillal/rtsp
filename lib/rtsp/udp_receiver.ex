@@ -25,13 +25,16 @@ defmodule RTSP.UDPReceiver do
             stream_handler: RTSP.StreamHandler.t() | nil
           }
 
-    defstruct receiver: nil,
-              parent_pid: nil,
-              socket: nil,
-              rtcp_socket: nil,
-              track: nil,
-              stream_handler: nil,
-              packet_reorderer: PacketReorderer.new()
+    @enforce_keys [:packet_reorderer]
+    defstruct @enforce_keys ++
+                [
+                  receiver: nil,
+                  parent_pid: nil,
+                  socket: nil,
+                  rtcp_socket: nil,
+                  track: nil,
+                  stream_handler: nil
+                ]
   end
 
   def start(opts) do
@@ -40,7 +43,7 @@ defmodule RTSP.UDPReceiver do
 
   @spec stop(pid()) :: :ok
   def stop(pid) do
-    GenServer.call(pid, :stop)
+    GenServer.stop(pid, :normal)
   end
 
   @impl true
@@ -63,16 +66,17 @@ defmodule RTSP.UDPReceiver do
       control_path: track.control_path
     }
 
-    state = %State{socket: socket, rtcp_socket: rtcp_socket, stream_handler: stream_handler}
-    {:ok, struct!(state, options)}
-  end
+    state = %State{
+      socket: socket,
+      rtcp_socket: rtcp_socket,
+      stream_handler: stream_handler,
+      packet_reorderer: PacketReorderer.new(options[:reorder_queue_size]),
+      track: track,
+      receiver: options[:receiver],
+      parent_pid: options[:parent_pid]
+    }
 
-  @impl true
-  def handle_call(:stop, _from, state) do
-    :gen_udp.close(state.socket)
-    :gen_udp.close(state.rtcp_socket)
-
-    {:stop, :normal, :ok, state}
+    {:ok, state}
   end
 
   @impl true

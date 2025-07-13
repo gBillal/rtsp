@@ -80,6 +80,15 @@ defmodule RTSP do
       type: :timeout,
       default: :timer.seconds(30)
     ],
+    reorder_queue_size: [
+      doc: """
+      Set number of packets to buffer for handling of reordered packets.
+
+      Due to the implementation, this size should be an exponent of 2.
+      """,
+      type: :pos_integer,
+      default: 64
+    ],
     receiver: [
       doc: "The process that will receive media streams messages.",
       type: :pid
@@ -221,14 +230,14 @@ defmodule RTSP do
           notify_closed_session(state)
           ConnectionManager.clean(%{state | tcp_receiver: nil})
 
-        pid in state.udp_receivers and state.udp_receivers != [] ->
-          udp_receivers = List.delete(state.udp_receivers, pid)
+        pid in state.udp_receivers ->
+          case List.delete(state.udp_receivers, pid) do
+            [] ->
+              notify_closed_session(state)
+              ConnectionManager.clean(%{state | udp_receivers: []})
 
-          if udp_receivers == [] do
-            notify_closed_session(state)
-            ConnectionManager.clean(%{state | udp_receivers: udp_receivers})
-          else
-            %{state | udp_receivers: udp_receivers}
+            receivers ->
+              %{state | udp_receivers: receivers}
           end
 
         true ->
@@ -270,7 +279,13 @@ defmodule RTSP do
   defp start_receivers(%{name: parent_pid, receiver: receiver} = state) do
     state.tracks
     |> Enum.map(fn track ->
-      opts = [parent_pid: parent_pid, receiver: receiver, track: track]
+      opts = [
+        parent_pid: parent_pid,
+        receiver: receiver,
+        track: track,
+        reorder_queue_size: state.reorder_queue_size
+      ]
+
       {:ok, pid} = UDPReceiver.start(opts)
 
       Process.monitor(pid)
