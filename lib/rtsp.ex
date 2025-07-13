@@ -197,7 +197,10 @@ defmodule RTSP do
 
   @impl true
   def handle_call(:stop, _from, state) do
-    {:reply, :ok, ConnectionManager.clean(state)}
+    state = ConnectionManager.clean(state)
+    Enum.each(state.udp_receivers, &UDPReceiver.stop/1)
+    notify_closed_session(state)
+    {:reply, :ok, %{state | udp_receivers: [], tcp_receiver: nil}}
   end
 
   @impl true
@@ -211,9 +214,28 @@ defmodule RTSP do
   end
 
   @impl true
-  def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
-    send(state.receiver, {:rtsp, state.name, :session_closed})
-    {:noreply, ConnectionManager.clean(state)}
+  def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
+    state =
+      cond do
+        pid == state.tcp_receiver ->
+          notify_closed_session(state)
+          ConnectionManager.clean(%{state | tcp_receiver: nil})
+
+        pid in state.udp_receivers and state.udp_receivers != [] ->
+          udp_receivers = List.delete(state.udp_receivers, pid)
+
+          if udp_receivers == [] do
+            notify_closed_session(state)
+            ConnectionManager.clean(%{state | udp_receivers: udp_receivers})
+          else
+            %{state | udp_receivers: udp_receivers}
+          end
+
+        true ->
+          ConnectionManager.clean(state)
+      end
+
+    {:noreply, state}
   end
 
   @impl true
@@ -242,7 +264,7 @@ defmodule RTSP do
       end)
 
     Process.monitor(pid)
-    state
+    %{state | tcp_receiver: pid}
   end
 
   defp start_receivers(%{name: parent_pid, receiver: receiver} = state) do
@@ -255,6 +277,10 @@ defmodule RTSP do
       pid
     end)
     |> then(&%{state | udp_receivers: &1})
+  end
+
+  defp notify_closed_session(state) do
+    send(state.receiver, {:rtsp, state.name, :session_closed})
   end
 
   @doc false

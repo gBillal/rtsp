@@ -9,7 +9,7 @@ defmodule RTSP.RTP.PacketReordererTest do
 
     reorderer = PacketReorderer.new(128)
     assert reorderer.buffer_size == 128
-    refute reorderer.initialized == false
+    refute reorderer.initialized
 
     packet = new_packet(1)
 
@@ -38,7 +38,9 @@ defmodule RTSP.RTP.PacketReordererTest do
     assert {[], reorderer} = PacketReorderer.process(packet6, reorderer)
     assert {[^packet7, ^packet6], reorderer} = PacketReorderer.process(packet7, reorderer)
     assert {[], reorderer} = PacketReorderer.process(packet8, reorderer)
-    assert {[^packet5, ^packet8, ^packet9], _reorderer} = PacketReorderer.process(packet9, reorderer)
+
+    assert {[^packet5, ^packet8, ^packet9], _reorderer} =
+             PacketReorderer.process(packet9, reorderer)
   end
 
   defp new_packet(seq) do

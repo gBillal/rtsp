@@ -22,8 +22,7 @@ defmodule RTSP.UDPReceiver do
             rtcp_socket: :inet.socket(),
             track: RTSP.track(),
             packet_reorderer: PacketReorderer.t(),
-            stream_handler: RTSP.StreamHandler.t() | nil,
-            timeout: non_neg_integer()
+            stream_handler: RTSP.StreamHandler.t() | nil
           }
 
     defstruct receiver: nil,
@@ -32,12 +31,16 @@ defmodule RTSP.UDPReceiver do
               rtcp_socket: nil,
               track: nil,
               stream_handler: nil,
-              packet_reorderer: PacketReorderer.new(),
-              timeout: :timer.seconds(10)
+              packet_reorderer: PacketReorderer.new()
   end
 
   def start(opts) do
     GenServer.start(__MODULE__, opts)
+  end
+
+  @spec stop(pid()) :: :ok
+  def stop(pid) do
+    GenServer.call(pid, :stop)
   end
 
   @impl true
@@ -65,12 +68,31 @@ defmodule RTSP.UDPReceiver do
   end
 
   @impl true
+  def handle_call(:stop, _from, state) do
+    :gen_udp.close(state.socket)
+    :gen_udp.close(state.rtcp_socket)
+
+    {:stop, :normal, :ok, state}
+  end
+
+  @impl true
   def handle_info({:udp, socket, _ip, _port, data}, %State{socket: socket} = state) do
     {:noreply, handle_data(state, data)}
   end
 
   @impl true
   def handle_info({:udp, socket, _ip, _port, _data}, %State{rtcp_socket: socket} = state) do
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info({:udp_error, socket, reason}, %State{socket: socket} = state) do
+    Logger.error("[UDPReceiver] UDP error: #{inspect(reason)}")
+    {:stop, :normal, state}
+  end
+
+  @impl true
+  def handle_info(_msg, state) do
     {:noreply, state}
   end
 

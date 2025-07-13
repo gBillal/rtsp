@@ -15,6 +15,7 @@ defmodule RTSP.State do
           keep_alive_timer: reference() | nil,
           check_recbuf_timer: reference() | nil,
           socket: :inet.socket() | nil,
+          tcp_receiver: pid() | nil,
           udp_receivers: [pid()],
           onvif_replay: Keyword.t(),
           receiver: pid(),
@@ -26,6 +27,7 @@ defmodule RTSP.State do
               [
                 state: :init,
                 socket: nil,
+                tcp_receiver: nil,
                 udp_receivers: [],
                 transport: :tcp,
                 tracks: [],

@@ -1,6 +1,8 @@
 defmodule RTSP.RTP.PacketReorderer do
   @moduledoc """
   Module responsible for re-ordering out of order rtp packets.
+
+  https://github.com/bluenviron/gortsplib/blob/main/pkg/rtpreorderer/reorderer.go
   """
 
   require Logger
@@ -13,7 +15,7 @@ defmodule RTSP.RTP.PacketReorderer do
           buffer_size: non_neg_integer(),
           initialized: boolean(),
           packets: :array.array(),
-          expected_seq_no: non_neg_integer(),
+          expected_seq_no: non_neg_integer() | nil,
           abs_pos: non_neg_integer()
         }
 
@@ -25,19 +27,18 @@ defmodule RTSP.RTP.PacketReorderer do
   """
   @spec new(non_neg_integer()) :: t()
   def new(buffer_size \\ @defult_buffer_size) do
-    %__MODULE__{buffer_size: buffer_size}
+    %__MODULE__{buffer_size: buffer_size, packets: :array.new(buffer_size, default: nil)}
   end
 
   @doc """
   Process a new rtp packet.
   """
   @spec process(ExRTP.Packet.t(), t()) :: {[ExRTP.Packet.t()], t()}
-  def process(packet, %__MODULE__{initialized: false} = jitter_buffer) do
+  def process(packet, %__MODULE__{initialized: false} = reorderer) do
     {[packet],
      %{
-       jitter_buffer
+       reorderer
        | initialized: true,
-         packets: :array.new(jitter_buffer.buffer_size, default: nil),
          expected_seq_no: packet.sequence_number + 1
      }}
   end
