@@ -1,16 +1,17 @@
 defmodule RTSP.TCPReceiver do
   @moduledoc false
 
-  import RTSP.PacketSplitter
-
   require Logger
 
-  alias RTSP.RTP.{Decoder, OnvifReplayExtension}
+  import RTSP.PacketSplitter
+  import RTSP.Helper
+
+  alias RTSP.RTP.OnvifReplayExtension
   alias RTSP.StreamHandler
 
   @type t :: %__MODULE__{
           parent_pid: pid(),
-          receiver_pid: pid(),
+          receiver: pid(),
           socket: :inet.socket(),
           rtsp_session: Membrane.RTSP.t(),
           tracks: [RTSP.track()],
@@ -20,7 +21,7 @@ defmodule RTSP.TCPReceiver do
           timeout: non_neg_integer()
         }
 
-  @enforce_keys [:receiver_pid, :parent_pid, :socket, :rtsp_session, :tracks]
+  @enforce_keys [:receiver, :parent_pid, :socket, :rtsp_session, :tracks]
   defstruct @enforce_keys ++
               [
                 onvif_replay: false,
@@ -71,12 +72,12 @@ defmodule RTSP.TCPReceiver do
           StreamHandler.handle_packet(handlers[ssrc], rtp_packet, datetime)
 
         if discontinuity?,
-          do: send(receiver.receiver_pid, {:rtsp, receiver.parent_pid, :discontinuity})
+          do: send(receiver.receiver, {:rtsp, receiver.parent_pid, :discontinuity})
 
         if sample,
           do:
             send(
-              receiver.receiver_pid,
+              receiver.receiver,
               {:rtsp, receiver.parent_pid, {handler.control_path, sample}}
             )
 
@@ -84,19 +85,6 @@ defmodule RTSP.TCPReceiver do
       end)
 
     %{receiver | unprocessed_data: unprocessed_data, stream_handlers: stream_handlers}
-  end
-
-  defp decode_rtp!(packet) do
-    case ExRTP.Packet.decode(packet) do
-      {:ok, packet} ->
-        packet
-
-      _error ->
-        raise """
-        invalid rtp packet
-        #{inspect(packet, limit: :infinity)}
-        """
-    end
   end
 
   defp decode_onvif_replay_extension(%ExRTP.Packet{extension_profile: 0xABAC} = packet) do
@@ -123,40 +111,5 @@ defmodule RTSP.TCPReceiver do
     }
 
     Map.put(handlers, packet.ssrc, stream_handler)
-  end
-
-  defp parser(:H264, fmtp) do
-    sps = fmtp.sprop_parameter_sets && fmtp.sprop_parameter_sets.sps
-    pps = fmtp.sprop_parameter_sets && fmtp.sprop_parameter_sets.pps
-
-    {Decoder.H264, Decoder.H264.init(sps: sps, pps: pps)}
-  end
-
-  defp parser(:H265, fmtp) do
-    parser_state =
-      Decoder.H265.init(
-        vps: List.wrap(fmtp && fmtp.sprop_vps) |> Enum.map(&clean_parameter_set/1),
-        sps: List.wrap(fmtp && fmtp.sprop_sps) |> Enum.map(&clean_parameter_set/1),
-        pps: List.wrap(fmtp && fmtp.sprop_pps) |> Enum.map(&clean_parameter_set/1)
-      )
-
-    {Decoder.H265, parser_state}
-  end
-
-  defp parser(:"mpeg4-generic", %{mode: :AAC_hbr}) do
-    {Decoder.MPEG4Audio, Decoder.MPEG4Audio.init(:hbr)}
-  end
-
-  defp parser(:"mpeg4-generic", %{mode: :AAC_lbr}) do
-    {Decoder.MPEG4Audio, Decoder.MPEG4Audio.init(:lbr)}
-  end
-
-  # An issue with one of Milesight camera where the parameter sets have
-  # <<0, 0, 0, 1>> at the end
-  defp clean_parameter_set(ps) do
-    case :binary.part(ps, byte_size(ps), -4) do
-      <<0, 0, 0, 1>> -> :binary.part(ps, 0, byte_size(ps) - 4)
-      _other -> ps
-    end
   end
 end

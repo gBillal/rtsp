@@ -25,30 +25,79 @@ defmodule RTSP do
     * `rtp_timestamp` - The RTP timestamp of the sample as nano second starting from 0.
     * `key_frame?` - A boolean indicating whether the sample is a key frame (valid for `video` streams.)
     * `wallclock_timestamp` - The wall clock timestamp when the sample was received.
-
-  >### TCP and UDP {: .info}
-  > Currently only TCP transport is supported. UDP transport will be added in the future.
   """
 
   use GenServer
 
   require Logger
 
-  alias RTSP.{ConnectionManager, State, TCPReceiver}
+  alias RTSP.{ConnectionManager, State, TCPReceiver, UDPReceiver}
 
   @initial_recv_buffer 1_000_000
 
-  @type session_opts :: [
-          stream_uri: String.t(),
-          allowed_media_types: [:video | :audio | :application],
-          timeout: pos_integer() | :infinity,
-          keep_alive_interval: pos_integer(),
-          parent_pid: pid(),
-          name: atom() | nil,
-          onvif_replay: boolean(),
-          start_date: DateTime.t() | nil,
-          end_date: DateTime.t() | nil
-        ]
+  @onvif_replay_options [
+    start_date: [
+      doc: "The start date for the onvif replay session.",
+      type: {:struct, DateTime},
+      required: true
+    ],
+    end_date: [
+      doc: "The end date for the onvif replay session.",
+      type: {:struct, DateTime},
+      default: nil
+    ]
+  ]
+
+  @session_options [
+    stream_uri: [
+      doc: "The RTSP stream URI to connect to.",
+      type: :string,
+      required: true
+    ],
+    allowed_media_types: [
+      doc: "The type of media streams to request from the rtsp server.",
+      type: {:list, {:in, [:application, :audio, :video]}},
+      default: [:audio, :video]
+    ],
+    transport: [
+      doc: """
+      The transport protocol to use for the RTSP session.
+
+      This can be either:
+      * `:tcp` - for TCP transport.
+      * `{:udp, min_port, max_port}` - for UDP transport, where `min_port` and `max_port` are the port range for RTP and RTCP streams.
+      """,
+      type: {:custom, __MODULE__, :check_transport, []},
+      default: :tcp
+    ],
+    timeout: [
+      doc: "The timeout for RTSP operations.",
+      type: :timeout,
+      default: :timer.seconds(5)
+    ],
+    keep_alive_interval: [
+      doc: "The interval for sending keep-alive messages.",
+      type: :timeout,
+      default: :timer.seconds(30)
+    ],
+    reorder_queue_size: [
+      doc: """
+      Set number of packets to buffer for handling of reordered packets.
+
+      Due to the implementation, this size should be an exponent of 2.
+      """,
+      type: :pos_integer,
+      default: 64
+    ],
+    receiver: [
+      doc: "The process that will receive media streams messages.",
+      type: :pid
+    ],
+    onvif_replay: [
+      doc: "The stream uri is an onvif replay.",
+      keys: @onvif_replay_options
+    ]
+  ]
 
   @typedoc """
   Represents a track in the RTSP session.
@@ -69,25 +118,11 @@ defmodule RTSP do
   @doc """
   Starts a new RTSP client session.
 
-  The following options can be provided:
-
-  * `:stream_uri` - The RTSP stream URI to connect to (required).
-  * `:allowed_media_types` - A list of allowed media types, defaults to: `[:video, :audio]`.
-  * `:timeout` - The timeout for RTSP operations (default: `5 seconds`).
-  * `:keep_alive_interval` - The interval for sending keep-alive messages (default: `30 seconds`).
-  * `:parent_pid` - The parent process that will receive messages, defaults to the calling process.
-  * `:name` - The name of the GenServer process, if provided it'll be used as the first element in the sent messages.
-
-  ### Onvif Replay
-  To decode `onvif replay` extension packets, the following options can be provided
-
-  * `:onvif_replay` - Whether to enable ONVIF replay extension (default: `false`).
-  * `:start_date` - The start date for the session.
-  * `:end_date` - The end date for the session.
+  The following options can be provided:\n#{NimbleOptions.docs(@session_options, nest_level: 1)}
   """
-  @spec start_link(session_opts()) :: GenServer.on_start()
+  @spec start_link(Keyword.t()) :: GenServer.on_start()
   def start_link(opts) do
-    opts = Keyword.put_new(opts, :parent_pid, self())
+    opts = Keyword.put_new(opts, :receiver, self())
     GenServer.start_link(__MODULE__, opts, name: opts[:name])
   end
 
@@ -120,23 +155,13 @@ defmodule RTSP do
 
   @impl true
   def init(opts) do
-    state = %State{
-      stream_uri: opts[:stream_uri],
-      transport: :tcp,
-      allowed_media_types: opts[:allowed_media_types] || [:video, :audio],
-      timeout: opts[:timeout] || :timer.seconds(5),
-      keep_alive_interval: opts[:keep_alive_interval] || :timer.seconds(30),
-      onvif_replay: opts[:onvif_replay] || false,
-      start_date: opts[:start_date],
-      end_date: opts[:end_date],
-      parent_pid: opts[:parent_pid],
-      name: opts[:name] || self()
-    }
+    opts = NimbleOptions.validate!(opts, @session_options)
+    state = struct!(State, opts)
 
     # Don't exit if rtsp session crashed or stopped
     Process.flag(:trap_exit, true)
 
-    {:ok, state}
+    {:ok, %{state | name: self()}}
   end
 
   @impl true
@@ -148,9 +173,18 @@ defmodule RTSP do
   def handle_call(:connect, _from, state) do
     case RTSP.ConnectionManager.establish_connection(state) do
       {:ok, %{tracks: tracks} = new_state} ->
-        {:tcp, socket} = List.first(tracks).transport
+        new_state =
+          case new_state.transport do
+            :tcp ->
+              {:tcp, socket} = List.first(tracks).transport
+              %{new_state | socket: socket}
+
+            _udp ->
+              new_state
+          end
+
         tracks = Enum.map(tracks, &Map.delete(&1, :transport))
-        {:reply, {:ok, tracks}, %{new_state | socket: socket, state: :connected}}
+        {:reply, {:ok, tracks}, %{new_state | state: :connected}}
 
       {:error, reason} ->
         {:reply, {:error, reason}, ConnectionManager.clean(state)}
@@ -160,31 +194,8 @@ defmodule RTSP do
   @impl true
   def handle_call(:play, _from, %{state: :connected} = state) do
     case RTSP.ConnectionManager.play(state) do
-      {:ok, new_state} ->
-        :ok = :inet.setopts(state.socket, buffer: @initial_recv_buffer, active: false)
-        :ok = Membrane.RTSP.transfer_socket_control(new_state.rtsp_session, self())
-
-        pid =
-          spawn(fn ->
-            receiver =
-              TCPReceiver.new(
-                parent_pid: new_state.name,
-                receiver_pid: new_state.parent_pid,
-                socket: new_state.socket,
-                rtsp_session: new_state.rtsp_session,
-                tracks: new_state.tracks,
-                onvif_replay: new_state.onvif_replay
-              )
-
-            TCPReceiver.start(receiver)
-          end)
-
-        Process.monitor(pid)
-
-        {:reply, :ok, ConnectionManager.check_recbuf(new_state)}
-
-      {:error, reason} ->
-        {:reply, {:error, reason}, ConnectionManager.clean(state)}
+      {:ok, new_state} -> {:reply, :ok, start_receivers(new_state)}
+      {:error, reason} -> {:reply, {:error, reason}, ConnectionManager.clean(state)}
     end
   end
 
@@ -195,7 +206,10 @@ defmodule RTSP do
 
   @impl true
   def handle_call(:stop, _from, state) do
-    {:reply, :ok, ConnectionManager.clean(state)}
+    state = ConnectionManager.clean(state)
+    Enum.each(state.udp_receivers, &UDPReceiver.stop/1)
+    notify_closed_session(state)
+    {:reply, :ok, %{state | udp_receivers: [], tcp_receiver: nil}}
   end
 
   @impl true
@@ -209,9 +223,28 @@ defmodule RTSP do
   end
 
   @impl true
-  def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
-    send(state.parent_pid, {:rtsp, state.name, :session_closed})
-    {:noreply, ConnectionManager.clean(state)}
+  def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
+    state =
+      cond do
+        pid == state.tcp_receiver ->
+          notify_closed_session(state)
+          ConnectionManager.clean(%{state | tcp_receiver: nil})
+
+        pid in state.udp_receivers ->
+          case List.delete(state.udp_receivers, pid) do
+            [] ->
+              notify_closed_session(state)
+              ConnectionManager.clean(%{state | udp_receivers: []})
+
+            receivers ->
+              %{state | udp_receivers: receivers}
+          end
+
+        true ->
+          ConnectionManager.clean(state)
+      end
+
+    {:noreply, state}
   end
 
   @impl true
@@ -219,4 +252,58 @@ defmodule RTSP do
     Logger.warning("Received unexpected message: #{inspect(msg)}")
     {:noreply, state}
   end
+
+  defp start_receivers(%{transport: :tcp} = state) do
+    :ok = :inet.setopts(state.socket, buffer: @initial_recv_buffer, active: false)
+    :ok = Membrane.RTSP.transfer_socket_control(state.rtsp_session, self())
+
+    pid =
+      spawn(fn ->
+        receiver =
+          TCPReceiver.new(
+            parent_pid: state.name,
+            receiver: state.receiver,
+            socket: state.socket,
+            rtsp_session: state.rtsp_session,
+            tracks: state.tracks,
+            onvif_replay: state.onvif_replay != []
+          )
+
+        TCPReceiver.start(receiver)
+      end)
+
+    Process.monitor(pid)
+    %{state | tcp_receiver: pid}
+  end
+
+  defp start_receivers(%{name: parent_pid, receiver: receiver} = state) do
+    state.tracks
+    |> Enum.map(fn track ->
+      opts = [
+        parent_pid: parent_pid,
+        receiver: receiver,
+        track: track,
+        reorder_queue_size: state.reorder_queue_size
+      ]
+
+      {:ok, pid} = UDPReceiver.start(opts)
+
+      Process.monitor(pid)
+      pid
+    end)
+    |> then(&%{state | udp_receivers: &1})
+  end
+
+  defp notify_closed_session(state) do
+    send(state.receiver, {:rtsp, state.name, :session_closed})
+  end
+
+  @doc false
+  def check_transport(:tcp), do: {:ok, :tcp}
+
+  def check_transport({:udp, min_port, max_port} = value)
+      when is_integer(min_port) and is_integer(max_port) and min_port < max_port,
+      do: {:ok, value}
+
+  def check_transport(value), do: {:error, "#{inspect(value)}"}
 end

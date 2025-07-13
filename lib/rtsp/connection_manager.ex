@@ -33,21 +33,7 @@ defmodule RTSP.ConnectionManager do
   def play(state) do
     Logger.debug("ConnectionManager: Setting RTSP on play mode")
 
-    headers =
-      case state.onvif_replay do
-        true ->
-          start_date = Calendar.strftime(state.start_date, "%Y%m%dT%H%M%S.%fZ")
-          end_date = state.end_date && Calendar.strftime(state.end_date, "%Y%m%dT%H%M%S.%fZ")
-
-          [
-            {"Require", "onvif-replay"},
-            {"Range", "clock=#{start_date}-#{end_date}"},
-            {"Rate-Control", "no"}
-          ]
-
-        false ->
-          []
-      end
+    headers = maybe_build_onvif_replay_headers(state.onvif_replay)
 
     case Membrane.RTSP.play(state.rtsp_session, headers) do
       {:ok, %{status: 200}} ->
@@ -158,9 +144,9 @@ defmodule RTSP.ConnectionManager do
 
   @spec setup_rtsp_connection_with_tcp(Membrane.RTSP.t(), [RTSP.track()], boolean()) ::
           {:ok, tracks :: [RTSP.track()]} | {:error, reason :: term()}
-  defp setup_rtsp_connection_with_tcp(rtsp_session, tracks, onvif_replay?) do
+  defp setup_rtsp_connection_with_tcp(rtsp_session, tracks, onvif_replay) do
     socket = Membrane.RTSP.get_socket(rtsp_session)
-    onvif_header = if onvif_replay?, do: [{"Require", "onvif-replay"}], else: []
+    onvif_header = if onvif_replay == [], do: [], else: [{"Require", "onvif-replay"}]
 
     tracks
     |> Enum.with_index()
@@ -266,5 +252,18 @@ defmodule RTSP.ConnectionManager do
       %^attribute{} = value -> value
       _other -> default
     end
+  end
+
+  defp maybe_build_onvif_replay_headers([]), do: []
+
+  defp maybe_build_onvif_replay_headers(options) do
+    start_date = Calendar.strftime(options[:start_date], "%Y%m%dT%H%M%S.%fZ")
+    end_date = options[:end_date] && Calendar.strftime(options[:end_date], "%Y%m%dT%H%M%S.%fZ")
+
+    [
+      {"Require", "onvif-replay"},
+      {"Range", "clock=#{start_date}-#{end_date}"},
+      {"Rate-Control", "no"}
+    ]
   end
 end
