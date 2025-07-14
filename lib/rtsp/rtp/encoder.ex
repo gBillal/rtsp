@@ -24,4 +24,11 @@ defmodule RTSP.RTP.Encoder do
   Invoked to handle a new sample (e.g. access unit in case of video)
   """
   @callback handle_sample(sample(), rtp_timestamp(), state()) :: {[ExRTP.Packet.t()], state()}
+
+  @doc """
+  Invoked to flush the encoder. All remaining data are encoded into a final RTP packet
+  """
+  @callback flush(state()) :: [ExRTP.Packet.t()]
+
+  @optional_callbacks flush: 1
 end
