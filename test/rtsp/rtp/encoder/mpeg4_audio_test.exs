@@ -85,4 +85,12 @@ defmodule RTSP.RTP.Encoder.MPEG4AudioTest do
              }
            ] = packets
   end
+
+  test "raise if sample size is bigger than max payload size" do
+    encoder = MPEG4Audio.init(mode: :hbr, max_payload_size: 100)
+
+    assert_raise RuntimeError, fn ->
+      MPEG4Audio.handle_sample(<<1::size(101)-unit(8)>>, 0, encoder)
+    end
+  end
 end

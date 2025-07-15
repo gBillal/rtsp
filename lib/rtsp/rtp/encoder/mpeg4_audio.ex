@@ -1,6 +1,15 @@
 defmodule RTSP.RTP.Encoder.MPEG4Audio do
   @moduledoc """
   Payload AAC frames into RTP packets.
+
+  The encoder does not support interleaving of samples and does not support fragmentation.
+
+  The following options can be provided:
+  - `:mode` - either `:hbr` (high bitrate) or `:lbr` (low bitrate).
+  - `:sequence_number` - initial sequence number (default is a random number).
+  - `:max_payload_size` - maximum size of the RTP payload (default is 1450 bytes).
+  - `:payload_type` - RTP payload type (default is 0).
+  - `:ssrc` - synchronization source identifier (default is 0).
   """
 
   @behaviour RTSP.RTP.Encoder
@@ -30,6 +39,12 @@ defmodule RTSP.RTP.Encoder.MPEG4Audio do
       acc_size: 0,
       timestamp: 0
     }
+  end
+
+  @impl true
+  def handle_sample(sample, _rtp_timestamp, state)
+      when byte_size(sample) > state.max_payload_size do
+    raise "Encoder does not support fragmentation: sample size #{byte_size(sample)} exceeds maximum payload size #{state.max_payload_size}"
   end
 
   @impl true
