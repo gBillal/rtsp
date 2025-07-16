@@ -98,7 +98,8 @@ defmodule RTSP.RTP.Encoder.MPEG4Audio do
       timestamp: state.timestamp,
       payload_type: state.payload_type,
       sequence_number: state.sequence_number,
-      ssrc: state.ssrc
+      ssrc: state.ssrc,
+      marker: true
     )
   end
 end
