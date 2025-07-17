@@ -248,6 +248,11 @@ defmodule RTSP do
   end
 
   @impl true
+  def handle_info({:EXIT, _pid, _reason}, state) do
+    {:noreply, ConnectionManager.clean(state)}
+  end
+
+  @impl true
   def handle_info(msg, state) do
     Logger.warning("Received unexpected message: #{inspect(msg)}")
     {:noreply, state}
