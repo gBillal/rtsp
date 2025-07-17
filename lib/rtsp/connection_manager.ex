@@ -42,13 +42,8 @@ defmodule RTSP.ConnectionManager do
       error ->
         error
     end
-  rescue
-    reason ->
-      Logger.error("""
-      ConnectionManager: RTSP session crashed
-      Reason: #{inspect(reason)}
-      """)
-
+  catch
+    :exit, _reason ->
       {:error, :session_crashed}
   end
 

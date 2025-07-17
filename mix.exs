@@ -1,7 +1,7 @@
 defmodule RTSP.MixProject do
   use Mix.Project
 
-  @version "0.3.2"
+  @version "0.4.0"
   @github_url "https://github.com/gBillal/rtsp"
 
   def project do
@@ -63,15 +63,19 @@ defmodule RTSP.MixProject do
         "LICENSE"
       ],
       nest_modules_by_prefix: [
-        RTSP.RTP.Encoder,
-        RTSP.RTP.Decoder
+        RTSP.RTP
       ],
       groups_for_modules: [
+        "RTP": [
+          RTSP.RTP.Encoder,
+          RTSP.RTP.Decoder,
+          RTSP.RTP.PacketReorderer
+        ],
         "RTP Encoders": [
           ~r/RTSP\.RTP\.Encoder($|\.)/
         ],
         "RTP Decoders": [
-          ~r/RTSP\.RTP\.Decoder($|\.)/
+          ~r/RTSP\.RTP\.Decoder($|\.)/,
         ],
         "RTP Extensions": [
           RTSP.RTP.OnvifReplayExtension
