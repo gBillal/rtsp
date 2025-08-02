@@ -12,6 +12,10 @@ defmodule RTSP.Server.Handler do
   o=- 0 0 IN IP4 127.0.0.1
   s=MyVideoSession
   t=0 0
+  m=video 0 RTP/AVP 96
+  a=control:/video.h264
+  a=rtpmap:96 H264/90000
+  a=fmtp:96 packetization-mode=1
   m=audio 0 RTP/AVP 98
   a=control:/audio.aac
   a=rtpmap:98 mpeg4-generic/44100/2
@@ -21,6 +25,12 @@ defmodule RTSP.Server.Handler do
   @impl true
   def init(_config) do
     sources = %{
+      h264: %{
+        encoding: :video,
+        location: "test/fixtures/streams/video.h264",
+        payload_type: 96,
+        clock_rate: 90000
+      },
       aac: %{
         encoding: :audio,
         location: "test/fixtures/streams/audio.aac",
@@ -49,22 +59,25 @@ defmodule RTSP.Server.Handler do
   @impl true
   def handle_play(configured_media_context, state) do
     Enum.each(configured_media_context, fn {control_path, config} ->
-      case URI.parse(control_path).path do
-        "/audio.aac" ->
-          spawn(fn ->
-            # Wait time to allow the server to send the play response
-            # before sending media data
-            Process.sleep(100)
+      codec =
+        case URI.parse(control_path).path do
+          "/audio.aac" -> :aac
+          "/video.h264" -> :h264
+        end
 
-            options = [
-              encoding: :aac,
-              location: state.sources[:aac].location,
-              payload_type: state.sources[:aac].payload_type
-            ]
+      spawn(fn ->
+        # Wait time to allow the server to send the play response
+        # before sending media data
+        Process.sleep(100)
 
-            RTSP.MediaStreamer.start_streaming(options, config)
-          end)
-      end
+        options = [
+          encoding: codec,
+          location: state.sources[codec].location,
+          payload_type: state.sources[codec].payload_type
+        ]
+
+        RTSP.MediaStreamer.start_streaming(options, config)
+      end)
     end)
 
     {Response.new(200), state}

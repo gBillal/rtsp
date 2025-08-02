@@ -1,7 +1,7 @@
 defmodule RTSP.MixProject do
   use Mix.Project
 
-  @version "0.4.0"
+  @version "0.4.1"
   @github_url "https://github.com/gBillal/rtsp"
 
   def project do
@@ -40,7 +40,7 @@ defmodule RTSP.MixProject do
       {:ex_rtp, "~> 0.4.0"},
       {:ex_rtcp, "~> 0.4.0"},
       {:membrane_rtsp, "~> 0.10.0"},
-      {:media_codecs, "~> 0.7.0"},
+      {:media_codecs, "~> 0.8.0"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
     ]
   end
@@ -66,7 +66,7 @@ defmodule RTSP.MixProject do
         RTSP.RTP
       ],
       groups_for_modules: [
-        "RTP": [
+        RTP: [
           RTSP.RTP.Encoder,
           RTSP.RTP.Decoder,
           RTSP.RTP.PacketReorderer
@@ -75,7 +75,7 @@ defmodule RTSP.MixProject do
           ~r/RTSP\.RTP\.Encoder($|\.)/
         ],
         "RTP Decoders": [
-          ~r/RTSP\.RTP\.Decoder($|\.)/,
+          ~r/RTSP\.RTP\.Decoder($|\.)/
         ],
         "RTP Extensions": [
           RTSP.RTP.OnvifReplayExtension
