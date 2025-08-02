@@ -22,7 +22,7 @@ defmodule RTSP do
 
   A `sample` is a tuple in the format `{payload, rtp_timestamp, key_frame?, wallclock_timestamp}`:
     * `payload` - The media payload data (a whole access unit in case of `video`).
-    * `rtp_timestamp` - The RTP timestamp of the sample as nano second starting from 0.
+    * `rtp_timestamp` - The RTP timestamp of the sample in the advertised clock rate starting from 0.
     * `key_frame?` - A boolean indicating whether the sample is a key frame (valid for `video` streams.)
     * `wallclock_timestamp` - The wall clock timestamp when the sample was received.
   """
@@ -127,7 +127,7 @@ defmodule RTSP do
   end
 
   @doc """
-  Connects the rtsp server./home/ghilas/p/Evercam/ex_nvr/rtsp/lib/rtsp/source.ex
+  Connects the rtsp server.
 
   It returns the set up tracks in case of success.
   """
@@ -166,7 +166,7 @@ defmodule RTSP do
 
   @impl true
   def handle_call(:connect, _from, %{state: state}) when state != :init do
-    raise "Session state is in #{state}, cannot connect again"
+    {:reply, {:error, :invalid_state}, state}
   end
 
   @impl true
@@ -200,9 +200,7 @@ defmodule RTSP do
   end
 
   @impl true
-  def handle_call(:play, _from, state) do
-    raise "Session is not on a connected state, current state is #{state.state}"
-  end
+  def handle_call(:play, _from, state), do: {:reply, {:error, :invalid_state}, state}
 
   @impl true
   def handle_call(:stop, _from, state) do
