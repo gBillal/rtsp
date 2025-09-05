@@ -38,10 +38,8 @@ defmodule RTSP.ConnectionManager do
 
     case Membrane.RTSP.play(state.rtsp_session, headers) do
       {:ok, %{status: 200} = resp} ->
-        state
-        |> update_keep_alive_interval(resp)
-        |> Map.put(:keep_alive_timer, start_keep_alive_timer(state))
-        |> then(&{:ok, &1})
+        state = update_keep_alive_interval(state, resp)
+        {:ok, %{state | keep_alive_timer: start_keep_alive_timer(state)}}
 
       error ->
         error
