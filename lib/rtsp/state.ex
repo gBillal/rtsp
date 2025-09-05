@@ -23,7 +23,7 @@ defmodule RTSP.State do
           name: atom() | pid()
         }
 
-  @enforce_keys [:stream_uri, :allowed_media_types, :timeout, :keep_alive_interval, :receiver]
+  @enforce_keys [:stream_uri, :allowed_media_types, :timeout, :receiver]
   defstruct @enforce_keys ++
               [
                 state: :init,
@@ -34,6 +34,7 @@ defmodule RTSP.State do
                 tracks: [],
                 reorder_queue_size: 0,
                 rtsp_session: nil,
+                keep_alive_interval: :timer.seconds(30),
                 keep_alive_timer: nil,
                 check_recbuf_timer: nil,
                 onvif_replay: [],

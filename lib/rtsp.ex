@@ -75,11 +75,6 @@ defmodule RTSP do
       type: :timeout,
       default: :timer.seconds(5)
     ],
-    keep_alive_interval: [
-      doc: "The interval for sending keep-alive messages.",
-      type: :timeout,
-      default: :timer.seconds(30)
-    ],
     reorder_queue_size: [
       doc: """
       Set number of packets to buffer for handling of reordered packets.
@@ -165,7 +160,7 @@ defmodule RTSP do
   end
 
   @impl true
-  def handle_call(:connect, _from, %{state: state}) when state != :init do
+  def handle_call(:connect, _from, %{state: status} = state) when status != :init do
     {:reply, {:error, :invalid_state}, state}
   end
 

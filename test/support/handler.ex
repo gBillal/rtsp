@@ -54,7 +54,7 @@ defmodule RTSP.Server.Handler do
   end
 
   @impl true
-  def handle_setup(_req, state), do: {Response.new(200), state}
+  def handle_setup(_req, :play, state), do: {Response.new(200), state}
 
   @impl true
   def handle_play(configured_media_context, state) do
