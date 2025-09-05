@@ -10,6 +10,7 @@ defmodule RTSP.RTP.PacketReorderer do
   import Bitwise
 
   @defult_buffer_size 64
+  @max_seq_no (1 <<< 16) - 1
 
   @type t :: %__MODULE__{
           buffer_size: non_neg_integer(),
@@ -39,7 +40,7 @@ defmodule RTSP.RTP.PacketReorderer do
      %{
        reorderer
        | initialized: true,
-         expected_seq_no: packet.sequence_number + 1
+         expected_seq_no: next_seq_no(packet.sequence_number)
      }}
   end
 
@@ -68,7 +69,7 @@ defmodule RTSP.RTP.PacketReorderer do
       end)
 
     abs_pos = jitter_buffer.abs_pos + length(indexes) + 1 &&& jitter_buffer.buffer_size - 1
-    expected_seq_no = packet.sequence_number + length(indexes) + 1
+    expected_seq_no = next_seq_no(packet.sequence_number, length(indexes) + 1)
 
     {[packet | result],
      %{jitter_buffer | packets: packets, abs_pos: abs_pos, expected_seq_no: expected_seq_no}}
@@ -90,7 +91,7 @@ defmodule RTSP.RTP.PacketReorderer do
       end)
 
     {Enum.reverse([packet | result]),
-     %{jitter_buffer | packets: packets, expected_seq_no: packet.sequence_number + 1}}
+     %{jitter_buffer | packets: packets, expected_seq_no: next_seq_no(packet.sequence_number)}}
   end
 
   defp do_process(jitter_buffer, packet, rel_pos) do
@@ -105,5 +106,9 @@ defmodule RTSP.RTP.PacketReorderer do
       nil -> indexes
       _packet -> do_get_indexes(packets, abs_pos + 1, buffer_size, [index | indexes])
     end
+  end
+
+  defp next_seq_no(seq_no, step \\ 1) do
+    seq_no + step &&& @max_seq_no
   end
 end

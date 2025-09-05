@@ -3,6 +3,7 @@ defmodule RTSP.ConnectionManager do
 
   require Logger
 
+  alias Membrane.RTSP.Response
   alias RTSP.State
 
   @content_type_header [{"accept", "application/sdp"}]
@@ -36,15 +37,15 @@ defmodule RTSP.ConnectionManager do
     headers = maybe_build_onvif_replay_headers(state.onvif_replay)
 
     case Membrane.RTSP.play(state.rtsp_session, headers) do
-      {:ok, %{status: 200}} ->
-        {:ok, %{state | keep_alive_timer: start_keep_alive_timer(state)}}
+      {:ok, %{status: 200} = resp} ->
+        state
+        |> update_keep_alive_interval(resp)
+        |> Map.put(:keep_alive_timer, start_keep_alive_timer(state))
+        |> then(&{:ok, &1})
 
       error ->
         error
     end
-  catch
-    :exit, _reason ->
-      {:error, :session_crashed}
   end
 
   @spec keep_alive(State.t()) :: State.t()
@@ -118,17 +119,13 @@ defmodule RTSP.ConnectionManager do
   end
 
   @spec setup_rtsp_connection(State.t()) :: rtsp_method_return()
-  defp setup_rtsp_connection(%{transport: :tcp} = state) do
-    case setup_rtsp_connection_with_tcp(state.rtsp_session, state.tracks, state.onvif_replay) do
-      {:ok, tracks} -> {:ok, %{state | tracks: tracks}}
-      {:error, reason} -> {:error, reason}
-    end
-  end
+  defp setup_rtsp_connection(state) do
+    case state.transport do
+      :tcp ->
+        setup_rtsp_connection_with_tcp(state, state.tracks, state.onvif_replay)
 
-  defp setup_rtsp_connection(%{transport: {:udp, min_port, max_port}} = state) do
-    case setup_rtsp_connection_with_udp(state.rtsp_session, min_port, max_port, state.tracks) do
-      {:ok, tracks} -> {:ok, %{state | tracks: tracks}}
-      {:error, reason} -> {:error, reason}
+      {:udp, min_port, max_port} ->
+        setup_rtsp_connection_with_udp(state, min_port, max_port, state.tracks)
     end
   end
 
@@ -137,22 +134,23 @@ defmodule RTSP.ConnectionManager do
     Process.send_after(self(), :keep_alive, interval)
   end
 
-  @spec setup_rtsp_connection_with_tcp(Membrane.RTSP.t(), [RTSP.track()], boolean()) ::
-          {:ok, tracks :: [RTSP.track()]} | {:error, reason :: term()}
-  defp setup_rtsp_connection_with_tcp(rtsp_session, tracks, onvif_replay) do
-    socket = Membrane.RTSP.get_socket(rtsp_session)
+  @spec setup_rtsp_connection_with_tcp(State.t(), [RTSP.track()], boolean()) ::
+          {:ok, State.t()} | {:error, reason :: term()}
+  defp setup_rtsp_connection_with_tcp(state, tracks, onvif_replay) do
+    socket = Membrane.RTSP.get_socket(state.rtsp_session)
     onvif_header = if onvif_replay == [], do: [], else: [{"Require", "onvif-replay"}]
 
     tracks
     |> Enum.with_index()
-    |> Enum.reduce_while({:ok, []}, fn {track, idx}, {:ok, set_up_tracks} ->
+    |> Enum.reduce_while({:ok, state, []}, fn {track, idx}, {:ok, state, tracks} ->
       transport_header =
         [{"Transport", "RTP/AVP/TCP;unicast;interleaved=#{idx * 2}-#{idx * 2 + 1}"}] ++
           onvif_header
 
-      case Membrane.RTSP.setup(rtsp_session, track.control_path, transport_header) do
-        {:ok, %{status: 200}} ->
-          {:cont, {:ok, [%{track | transport: {:tcp, socket}} | set_up_tracks]}}
+      case Membrane.RTSP.setup(state.rtsp_session, track.control_path, transport_header) do
+        {:ok, %{status: 200} = resp} ->
+          state = update_keep_alive_interval(state, resp)
+          {:cont, {:ok, state, [%{track | transport: {:tcp, socket}} | tracks]}}
 
         error ->
           Logger.debug("ConnectionManager: Setting up RTSP connection failed: #{inspect(error)}")
@@ -160,45 +158,50 @@ defmodule RTSP.ConnectionManager do
           {:halt, {:error, :setting_up_rtsp_connection_failed}}
       end
     end)
+    |> case do
+      {:ok, state, tracks} -> {:ok, %{state | tracks: Enum.reverse(tracks)}}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   @spec setup_rtsp_connection_with_udp(
-          Membrane.RTSP.t(),
+          State.t(),
           :inet.port_number(),
           :inet.port_number(),
           [RTSP.track()],
           [RTSP.track()]
         ) :: {:ok, tracks :: [RTSP.track()]} | {:error, reason :: term()}
   defp setup_rtsp_connection_with_udp(
-         rtsp_session,
+         state,
          port,
          max_port,
          tracks,
          set_up_tracks \\ []
        )
 
-  defp setup_rtsp_connection_with_udp(_rtsp_session, _port, _max_port, [], set_up_tracks) do
-    {:ok, Enum.reverse(set_up_tracks)}
+  defp setup_rtsp_connection_with_udp(state, _port, _max_port, [], set_up_tracks) do
+    {:ok, %{state | tracks: Enum.reverse(set_up_tracks)}}
   end
 
-  defp setup_rtsp_connection_with_udp(_rtsp_session, max_port, max_port, _tracks, _set_up_tracks) do
+  defp setup_rtsp_connection_with_udp(_state, max_port, max_port, _tracks, _set_up_tracks) do
     # when current port is equal to max_port the range is already exceeded, because port + 1 is also required.
     {:error, :port_range_exceeded}
   end
 
-  defp setup_rtsp_connection_with_udp(rtsp_session, port, max_port, tracks, set_up_tracks) do
+  defp setup_rtsp_connection_with_udp(state, port, max_port, tracks, set_up_tracks) do
     if port_taken?(port) or port_taken?(port + 1) do
-      setup_rtsp_connection_with_udp(rtsp_session, port + 1, max_port, tracks, set_up_tracks)
+      setup_rtsp_connection_with_udp(state, port + 1, max_port, tracks, set_up_tracks)
     else
       transport_header = [{"Transport", "RTP/AVP/UDP;unicast;client_port=#{port}-#{port + 1}"}]
       [track | rest_tracks] = tracks
 
-      case Membrane.RTSP.setup(rtsp_session, track.control_path, transport_header) do
-        {:ok, %{status: 200}} ->
+      case Membrane.RTSP.setup(state.rtsp_session, track.control_path, transport_header) do
+        {:ok, %{status: 200} = resp} ->
+          state = update_keep_alive_interval(state, resp)
           set_up_tracks = [%{track | transport: {:udp, port, port + 1}} | set_up_tracks]
 
           setup_rtsp_connection_with_udp(
-            rtsp_session,
+            state,
             port + 2,
             max_port,
             rest_tracks,
@@ -260,5 +263,20 @@ defmodule RTSP.ConnectionManager do
       {"Range", "clock=#{start_date}-#{end_date}"},
       {"Rate-Control", "no"}
     ]
+  end
+
+  defp update_keep_alive_interval(state, resp) do
+    timeout =
+      case Response.get_header(resp, "Session") do
+        {:ok, value} -> String.trim(value) |> String.split(";timeout=", parts: 2) |> Enum.at(1)
+        _error -> nil
+      end
+
+    with timeout when is_binary(timeout) <- timeout,
+         {timeout, _} <- Integer.parse(timeout) do
+      %{state | keep_alive_interval: :timer.seconds(div(timeout * 8, 10))}
+    else
+      _other -> state
+    end
   end
 end
