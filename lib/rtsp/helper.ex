@@ -18,14 +18,14 @@ defmodule RTSP.Helper do
   end
 
   @spec parser(atom(), ExSDP.Attribute.FMTP.t()) :: {module(), any()}
-  def parser(:H264, fmtp) do
+  def parser(:h264, fmtp) do
     sps = fmtp.sprop_parameter_sets && fmtp.sprop_parameter_sets.sps
     pps = fmtp.sprop_parameter_sets && fmtp.sprop_parameter_sets.pps
 
     {Decoder.H264, Decoder.H264.init(sps: sps, pps: pps)}
   end
 
-  def parser(:H265, fmtp) do
+  def parser(:h265, fmtp) do
     parser_state =
       Decoder.H265.init(
         vps: List.wrap(fmtp && fmtp.sprop_vps) |> Enum.map(&clean_parameter_set/1),

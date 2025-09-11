@@ -100,7 +100,7 @@ defmodule RTSP.TCPReceiver do
   defp maybe_init_stream_handler(state, handlers, packet) do
     track = Enum.find(state.tracks, &(&1.rtpmap.payload_type == packet.payload_type))
 
-    encoding = String.to_atom(track.rtpmap.encoding)
+    encoding = track.rtpmap.encoding |> String.downcase() |> String.to_atom()
     {parser_mod, parser_state} = parser(encoding, track.fmtp)
 
     stream_handler = %StreamHandler{

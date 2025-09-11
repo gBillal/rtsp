@@ -56,7 +56,7 @@ defmodule RTSP.UDPReceiver do
 
     :ok = :inet.setopts(socket, buffer: @buffer_size, recbuf: @buffer_size)
 
-    encoding = String.to_atom(track.rtpmap.encoding)
+    encoding = track.rtpmap.encoding |> String.downcase() |> String.to_atom()
     {parser_mod, parser_state} = parser(encoding, track.fmtp)
 
     stream_handler = %StreamHandler{
