@@ -85,6 +85,16 @@ defmodule RTSP.ConnectionManager do
     %{state | state: :init, rtsp_session: nil, keep_alive_timer: nil}
   end
 
+  @spec get_server_ip(State.t()) :: :inet.ip_address() | nil
+  def get_server_ip(state) do
+    socket = Membrane.RTSP.get_socket(state.rtsp_session)
+
+    case :inet.peername(socket) do
+      {:ok, {ip, _port}} -> ip
+      _other -> nil
+    end
+  end
+
   @spec start_rtsp_connection(State.t()) :: rtsp_method_return()
   defp start_rtsp_connection(state) do
     case Membrane.RTSP.start_link(state.stream_uri,
@@ -196,14 +206,14 @@ defmodule RTSP.ConnectionManager do
       case Membrane.RTSP.setup(state.rtsp_session, track.control_path, transport_header) do
         {:ok, %{status: 200} = resp} ->
           state = update_keep_alive_interval(state, resp)
-          set_up_tracks = [%{track | transport: {:udp, port, port + 1}} | set_up_tracks]
+          track = %{track | transport: {:udp, port, port + 1}, server_port: get_server_port(resp)}
 
           setup_rtsp_connection_with_udp(
             state,
             port + 2,
             max_port,
             rest_tracks,
-            set_up_tracks
+            [track | set_up_tracks]
           )
 
         _other ->
@@ -234,7 +244,8 @@ defmodule RTSP.ConnectionManager do
         type: media.type,
         rtpmap: get_attribute(media, ExSDP.Attribute.RTPMapping),
         fmtp: get_attribute(media, ExSDP.Attribute.FMTP),
-        transport: nil
+        transport: nil,
+        server_port: nil
       }
     end)
   end
@@ -275,6 +286,17 @@ defmodule RTSP.ConnectionManager do
       %{state | keep_alive_interval: :timer.seconds(div(timeout * 8, 10))}
     else
       _other -> state
+    end
+  end
+
+  defp get_server_port(resp) do
+    regex = ~r/server_port=(\d+)-(\d+)/
+
+    with {:ok, transport} <- Response.get_header(resp, "Transport"),
+         [port1, port2] <- Regex.run(regex, transport, capture: :all_but_first) do
+      {String.to_integer(port1), String.to_integer(port2)}
+    else
+      _error -> nil
     end
   end
 end

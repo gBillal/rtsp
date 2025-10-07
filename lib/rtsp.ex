@@ -275,13 +275,16 @@ defmodule RTSP do
   end
 
   defp start_receivers(%{name: parent_pid, receiver: receiver} = state) do
+    server_ip = ConnectionManager.get_server_ip(state)
+
     state.tracks
     |> Enum.map(fn track ->
       opts = [
         parent_pid: parent_pid,
         receiver: receiver,
         track: track,
-        reorder_queue_size: state.reorder_queue_size
+        reorder_queue_size: state.reorder_queue_size,
+        server_ip: server_ip
       ]
 
       {:ok, pid} = UDPReceiver.start(opts)
