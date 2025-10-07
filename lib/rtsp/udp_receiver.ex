@@ -76,6 +76,8 @@ defmodule RTSP.UDPReceiver do
       parent_pid: options[:parent_pid]
     }
 
+    send_empty_packets(socket, rtcp_socket, options[:server_ip], track.server_port)
+
     {:ok, state}
   end
 
@@ -134,5 +136,17 @@ defmodule RTSP.UDPReceiver do
       end)
 
     %{receiver | stream_handler: handler, packet_reorderer: packet_reorderer}
+  end
+
+  defp send_empty_packets(_rtp_socket, _rtcp_socket, ip, server_port)
+       when is_nil(ip) or is_nil(server_port),
+       do: :ok
+
+  defp send_empty_packets(rtp_socket, rtcp_socket, server_ip, {rtp_port, rtcp_port}) do
+    rtp_data = ExRTP.Packet.new(<<>>) |> ExRTP.Packet.encode()
+    rtcp_data = %ExRTCP.Packet.ReceiverReport{ssrc: 0} |> ExRTCP.Packet.encode()
+
+    :gen_udp.send(rtp_socket, server_ip, rtp_port, rtp_data)
+    :gen_udp.send(rtcp_socket, server_ip, rtcp_port, rtcp_data)
   end
 end
