@@ -224,7 +224,7 @@ defmodule RTSP.ConnectionManager do
 
   @spec port_taken?(:inet.port_number()) :: boolean()
   defp port_taken?(port) do
-    case :gen_udp.open(port, reuseaddr: true) do
+    case :gen_udp.open(port) do
       {:ok, socket} ->
         :inet.close(socket)
         false
