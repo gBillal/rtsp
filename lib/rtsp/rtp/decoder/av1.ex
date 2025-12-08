@@ -33,7 +33,7 @@ defmodule RTSP.RTP.Decoder.AV1 do
 
           {:ok, {tu, packet.timestamp, state.keyframe?}, %{state | obus: [], last_obu: []}}
 
-        packet.timestamp != state.last_timestamp ->
+        state.last_timestamp != nil and packet.timestamp != state.last_timestamp ->
           tu = state.obus |> Enum.reverse() |> Enum.concat()
           state = %{state | obus: [obus], last_obu: last_obu, last_timestamp: packet.timestamp}
           {:ok, {tu, packet.timestamp, state.keyframe?}, state}
@@ -53,7 +53,7 @@ defmodule RTSP.RTP.Decoder.AV1 do
 
   @impl true
   def handle_discontinuity(state) do
-    state
+    %{state | obus: [], last_obu: [], last_timestamp: nil, keyframe?: false}
   end
 
   defp get_obus(data, w, acc \\ [])
@@ -63,7 +63,7 @@ defmodule RTSP.RTP.Decoder.AV1 do
   defp get_obus(data, 1, acc), do: {:ok, Enum.reverse([data | acc])}
 
   defp get_obus(data, w, acc) do
-    with {:ok, size, rest} <- leb128(data),
+    with {size, rest} <- MediaCodecs.Helper.leb128_decode(data),
          <<obu::binary-size(size), rest::binary>> <- rest do
       get_obus(rest, w - 1, [obu | acc])
     else
@@ -101,17 +101,4 @@ defmodule RTSP.RTP.Decoder.AV1 do
   @compile {:inline, prepend_obus: 2}
   defp prepend_obus([], obus), do: obus
   defp prepend_obus(new, obus), do: [new | obus]
-
-  defp leb128(data, acc \\ 0, idx \\ 0)
-
-  defp leb128(<<>>, _acc, _idx), do: {:error, :invalid_payload}
-
-  defp leb128(<<stop::1, value::7, rest::binary>>, acc, idx) do
-    acc = value |> Bitwise.bsl(idx * 7) |> Bitwise.bor(acc)
-
-    case stop do
-      0 -> {:ok, acc, rest}
-      1 -> leb128(rest, acc, idx + 1)
-    end
-  end
 end

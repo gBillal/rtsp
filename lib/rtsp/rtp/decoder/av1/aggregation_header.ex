@@ -11,6 +11,18 @@ defmodule RTSP.RTP.Decoder.AV1.AggregationHeader do
   defstruct [:z, :y, :w, :n]
 
   @compile {:inline, parse: 1}
+  @doc """
+  Decodes aggregation header.
+
+      iex> RTSP.RTP.Decoder.AV1.AggregationHeader.parse(<<>>)
+      {:error, :invalid_aggregation_header}
+
+      iex> RTSP.RTP.Decoder.AV1.AggregationHeader.parse(<<136>>)
+      {:error, :invalid_aggregation_header}
+
+      iex> RTSP.RTP.Decoder.AV1.AggregationHeader.parse(<<80, 1, 2, 3>>)
+      {:ok, %RTSP.RTP.Decoder.AV1.AggregationHeader{n: 0, w: 1, y: 1, z: 0}, <<1, 2, 3>>}
+  """
   @spec parse(binary()) :: {:ok, t(), binary()} | {:error, atom()}
   def parse(<<1::1, _y::1, _w::2, 1::1, _::3, _rest::binary>>) do
     {:error, :invalid_aggregation_header}
