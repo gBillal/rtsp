@@ -1,6 +1,8 @@
 defmodule RTSP.RTP.Decoder.H265 do
   @moduledoc """
   Parse and assemble H265 NAL units into access units.
+
+  This module returns access units as a list of NAL units where each keyframe has parameter sets prepended.
   """
 
   @behaviour RTSP.RTP.Decoder

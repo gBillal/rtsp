@@ -1,6 +1,8 @@
 defmodule RTSP.RTP.Decoder.AV1 do
   @moduledoc """
-  Depacketize rtp packets into OBUs.
+  Depayload rtp packets into OBUs.
+
+  This module returns temporal units as a list of OBUs where each OBU `has_size_flag` is 0.
   """
   require Logger
 
@@ -31,7 +33,8 @@ defmodule RTSP.RTP.Decoder.AV1 do
             |> Enum.reverse()
             |> Enum.concat()
 
-          {:ok, {tu, packet.timestamp, state.keyframe?}, %{state | obus: [], last_obu: []}}
+          {:ok, {tu, packet.timestamp, state.keyframe?},
+           %{state | obus: [], last_obu: [], last_timestamp: nil}}
 
         state.last_timestamp != nil and packet.timestamp != state.last_timestamp ->
           tu = state.obus |> Enum.reverse() |> Enum.concat()
