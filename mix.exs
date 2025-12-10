@@ -40,7 +40,7 @@ defmodule RTSP.MixProject do
       {:ex_rtp, "~> 0.4.0"},
       {:ex_rtcp, "~> 0.4.0"},
       {:membrane_rtsp, "~> 0.11.0"},
-      {:media_codecs, "~> 0.8.0"},
+      {:media_codecs, "~> 0.9.0"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
     ]
   end
