@@ -31,3 +31,16 @@ def deps do
   ]
 end
 ```
+
+## Supported Media Types
+
+The following media types are depayloaded and parsed:
+- H264
+- H265
+- AAC (lbr and hbr)
+- AV1
+
+A payloader is available for the following media types:
+- H264
+- H265
+- AAC (lbr and hbr)
