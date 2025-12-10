@@ -2,6 +2,8 @@ defmodule RTSPTest do
   alias RTSP.MediaStreamer
   use ExUnit.Case, async: true
 
+  doctest RTSP.RTP.Decoder.AV1.AggregationHeader
+
   setup do
     pid =
       start_supervised!(

@@ -36,6 +36,10 @@ defmodule RTSP.Helper do
     {Decoder.H265, parser_state}
   end
 
+  def parser(:av1, _fmtp) do
+    {Decoder.AV1, Decoder.AV1.init([])}
+  end
+
   def parser(:"mpeg4-generic", %{mode: :AAC_hbr}) do
     {Decoder.MPEG4Audio, Decoder.MPEG4Audio.init(:hbr)}
   end
