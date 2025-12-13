@@ -48,6 +48,14 @@ defmodule RTSP.Helper do
     {Decoder.MPEG4Audio, Decoder.MPEG4Audio.init(:lbr)}
   end
 
+  def parser(codec, _fmtp) when codec in [:pcmu, :pcma] do
+    {Decoder.G711, Decoder.G711.init([])}
+  end
+
+  def parser(other_codec, _fmtp) do
+    raise "Unsupported codec for RTP depayloader: #{inspect(other_codec)}"
+  end
+
   # An issue with one of Milesight camera where the parameter sets have
   # <<0, 0, 0, 1>> at the end
   defp clean_parameter_set(ps) do
