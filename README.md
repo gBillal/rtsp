@@ -27,7 +27,7 @@ The package can be installed by adding `rtsp` to your list of dependencies in `m
 ```elixir
 def deps do
   [
-    {:rtsp, "~> 0.5.0"}
+    {:rtsp, "~> 0.6.0"}
   ]
 end
 ```
@@ -37,10 +37,12 @@ end
 The following media types are depayloaded and parsed:
 - H264
 - H265
-- AAC (lbr and hbr)
 - AV1
+- AAC (lbr and hbr)
+- G711 (a-law and u-law)
 
 A payloader is available for the following media types:
 - H264
 - H265
 - AAC (lbr and hbr)
+- G711 (a-law and u-law)

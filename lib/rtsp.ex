@@ -261,7 +261,6 @@ defmodule RTSP do
           TCPReceiver.new(
             parent_pid: state.name,
             receiver: state.receiver,
-            timeout: state.timeout,
             socket: state.socket,
             rtsp_session: state.rtsp_session,
             tracks: state.tracks,
