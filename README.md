@@ -27,7 +27,7 @@ The package can be installed by adding `rtsp` to your list of dependencies in `m
 ```elixir
 def deps do
   [
-    {:rtsp, "~> 0.6.0"}
+    {:rtsp, "~> 0.6.1"}
   ]
 end
 ```
