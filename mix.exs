@@ -1,7 +1,7 @@
 defmodule RTSP.MixProject do
   use Mix.Project
 
-  @version "0.6.0"
+  @version "0.6.1"
   @github_url "https://github.com/gBillal/rtsp"
 
   def project do
@@ -40,7 +40,7 @@ defmodule RTSP.MixProject do
       {:ex_rtp, "~> 0.4.0"},
       {:ex_rtcp, "~> 0.4.0"},
       {:membrane_rtsp, "~> 0.11.0"},
-      {:media_codecs, "~> 0.9.0"},
+      {:media_codecs, "~> 0.10.0"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
     ]
   end
