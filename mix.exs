@@ -1,7 +1,7 @@
 defmodule RTSP.MixProject do
   use Mix.Project
 
-  @version "0.6.1"
+  @version "0.6.2"
   @github_url "https://github.com/gBillal/rtsp"
 
   def project do

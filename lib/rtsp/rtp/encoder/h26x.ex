@@ -40,7 +40,7 @@ defmodule RTSP.RTP.Encoder.H26x do
             {new_packets, state} = encode(nalu, timestamp, state)
             {new_packets ++ [new_packet | packets], state, [], 0}
 
-          byte_size(nalu) + size < state.max_payload_size ->
+          byte_size(nalu) + size <= state.max_payload_size ->
             {packets, state, [nalu | acc], size + byte_size(nalu)}
 
           true ->

@@ -27,6 +27,7 @@ defmodule RTSP.RTP.Encoder.G711 do
         ssrc: state.ssrc
       )
 
+    state = %{state | sequence_number: Bitwise.band(state.sequence_number + 1, @max_rtp_seq_no)}
     {[packet], state}
   end
 end
