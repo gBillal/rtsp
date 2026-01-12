@@ -161,4 +161,10 @@ defmodule RTSP.FileServer.MediaStreamer do
     packets = Enum.map(packets, &[36, elem(ctx.channels, 0), <<byte_size(&1)::16>>, &1])
     :gen_tcp.send(socket, packets)
   end
+
+  defp send_packets(packets, %{transport: :UDP} = ctx) do
+    Enum.each(packets, fn packet ->
+      :gen_udp.send(ctx.rtp_socket, ctx.address, elem(ctx.client_port, 0), packet)
+    end)
+  end
 end
