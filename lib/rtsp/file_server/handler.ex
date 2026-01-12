@@ -33,7 +33,6 @@ defmodule RTSP.FileServer.Handler do
         Response.new(200)
         |> Response.with_header("Content-Type", "application/sdp")
         |> Response.with_body(to_string(sdp))
-        |> IO.inspect()
 
       {respose, %{state | streamer: streamer}}
     else

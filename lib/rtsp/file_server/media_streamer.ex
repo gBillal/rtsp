@@ -26,7 +26,8 @@ defmodule RTSP.FileServer.MediaStreamer do
   def init(opts) do
     tracks =
       Map.new(opts[:medias], fn {track_id, sdp_media} ->
-        {track_id, init_payloader(sdp_media)}
+        mapping = ExSDP.get_attribute(sdp_media, RTPMapping)
+        {track_id, init_payloader(mapping)}
       end)
 
     reader_state = opts[:reader_state]
@@ -120,23 +121,28 @@ defmodule RTSP.FileServer.MediaStreamer do
     end
   end
 
-  defp init_payloader(sdp_media) do
-    case ExSDP.get_attribute(sdp_media, RTPMapping) do
-      %{encoding: "H264"} = mapping ->
-        %{
-          payloader: Encoder.H264,
-          payloader_state: Encoder.H264.init(payload_type: mapping.payload_type),
-          timescale: mapping.clock_rate
-        }
+  defp init_payloader(%{encoding: "H264"} = mapping) do
+    %{
+      payloader: Encoder.H264,
+      payloader_state: Encoder.H264.init(payload_type: mapping.payload_type),
+      timescale: mapping.clock_rate
+    }
+  end
 
-      %{encoding: "MPEG4-GENERIC"} = mapping ->
-        %{
-          payloader: Encoder.MPEG4Audio,
-          payloader_state:
-            Encoder.MPEG4Audio.init(mode: :hbr, payload_type: mapping.payload_type),
-          timescale: mapping.clock_rate
-        }
-    end
+  defp init_payloader(%{encoding: "H265"} = mapping) do
+    %{
+      payloader: Encoder.H265,
+      payloader_state: Encoder.H265.init(payload_type: mapping.payload_type),
+      timescale: mapping.clock_rate
+    }
+  end
+
+  defp init_payloader(%{encoding: "MPEG4-GENERIC"} = mapping) do
+    %{
+      payloader: Encoder.MPEG4Audio,
+      payloader_state: Encoder.MPEG4Audio.init(mode: :hbr, payload_type: mapping.payload_type),
+      timescale: mapping.clock_rate
+    }
   end
 
   defp encode_and_send(ctx, payload, pts) do

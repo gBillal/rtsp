@@ -20,7 +20,7 @@ if Code.ensure_loaded?(ExMP4) do
       filters =
         Map.new(tracks, fn {control, track} ->
           case track.media do
-            :h264 ->
+            codec when codec in [:h264, :h265] ->
               {:ok, filter} = MP4ToAnnexb.init(track, [])
               {control, {MP4ToAnnexb, filter}}
 
@@ -48,53 +48,18 @@ if Code.ensure_loaded?(ExMP4) do
           {:eof, state}
 
         {sample_metadata, track} ->
-          sample = ExMP4.Reader.read_sample(state.reader, sample_metadata)
+          {sample, state} =
+            state.reader
+            |> ExMP4.Reader.read_sample(sample_metadata)
+            |> filter_sample(track_id, state)
 
-          {sample, filters} =
-            case Map.get(state.filters, track_id) do
-              nil ->
-                {sample, state.filters}
-
-              {filter_module, filter_state} ->
-                {sample, filter_state} = filter_module.filter(filter_state, sample)
-                {sample, %{state.filters | track_id => {filter_module, filter_state}}}
-            end
-
-          state = %{state | tracks: Map.put(state.tracks, track_id, track), filters: filters}
+          state = %{state | tracks: Map.put(state.tracks, track_id, track)}
           {{sample.payload, sample.dts, sample.pts, sample.sync?}, state}
       end
     end
 
     defp track_to_sdp_media(track, control) do
       pt = track.id + 95
-
-      encoding =
-        case track.media do
-          :aac -> "MPEG4-GENERIC"
-          other -> String.upcase("#{other}")
-        end
-
-      fmtp =
-        case track.media do
-          :h264 ->
-            sps = List.first(track.priv_data.sps)
-            pps = List.first(track.priv_data.pps)
-
-            %ExSDP.Attribute.FMTP{
-              pt: pt,
-              packetization_mode: 1,
-              sprop_parameter_sets: %{sps: sps, pps: pps}
-            }
-
-          :aac ->
-            [descriptor] = MediaCodecs.MPEG4.parse_descriptors(track.priv_data.es_descriptor)
-            asc = descriptor.dec_config_descr.decoder_specific_info
-
-            "fmtp:#{pt} mode=AAC-hbr; sizeLength=13; indexLength=3; indexDeltaLength=3; constantDuration=1024; config=#{Base.encode16(asc, case: :upper)}"
-
-          codec ->
-            raise "Unsupported codec #{inspect(codec)} in MP4 track"
-        end
 
       %ExSDP.Media{
         type: track.type,
@@ -103,15 +68,62 @@ if Code.ensure_loaded?(ExMP4) do
         fmt: [pt],
         attributes: [
           {"control", control},
-          fmtp,
+          fmtp(track, pt),
           %ExSDP.Attribute.RTPMapping{
             payload_type: pt,
-            encoding: encoding,
+            encoding: encoding(track.media),
             clock_rate: track.timescale,
             params: if(track.media == :aac, do: "2")
           }
         ]
       }
+    end
+
+    defp filter_sample(sample, track_id, state) do
+      case Map.get(state.filters, track_id) do
+        nil ->
+          {sample, state}
+
+        {filter_module, filter_state} ->
+          {sample, filter_state} = filter_module.filter(filter_state, sample)
+          filters = %{state.filters | track_id => {filter_module, filter_state}}
+          {sample, %{state | filters: filters}}
+      end
+    end
+
+    defp encoding(:aac), do: "MPEG4-GENERIC"
+    defp encoding(other), do: String.upcase("#{other}")
+
+    defp fmtp(%{media: :h264} = track, pt) do
+      sps = List.first(track.priv_data.sps)
+      pps = List.first(track.priv_data.pps)
+
+      %ExSDP.Attribute.FMTP{
+        pt: pt,
+        packetization_mode: 1,
+        sprop_parameter_sets: %{sps: sps, pps: pps}
+      }
+    end
+
+    defp fmtp(%{media: :h265} = track, pt) do
+      %ExSDP.Attribute.FMTP{
+        pt: pt,
+        packetization_mode: 1,
+        sprop_vps: track.priv_data.vps,
+        sprop_sps: track.priv_data.sps,
+        sprop_pps: track.priv_data.pps
+      }
+    end
+
+    defp fmtp(%{media: :aac} = track, pt) do
+      [descriptor] = MediaCodecs.MPEG4.parse_descriptors(track.priv_data.es_descriptor)
+      asc = descriptor.dec_config_descr.decoder_specific_info
+
+      "fmtp:#{pt} mode=AAC-hbr; sizeLength=13; indexLength=3; indexDeltaLength=3; constantDuration=1024; config=#{Base.encode16(asc, case: :upper)}"
+    end
+
+    defp fmtp(track, _pt) do
+      raise "Unsupported codec #{track.media} in MP4 track"
     end
   end
 end
