@@ -9,8 +9,8 @@ defmodule RTSP.FileServer.Handler do
   alias RTSP.FileServer.{FileReader, MediaStreamer}
 
   @impl true
-  def init(files) do
-    %{files: files, streamer: nil}
+  def init(config) do
+    %{files: config[:files], streamer: nil}
   end
 
   @impl true
@@ -55,6 +55,9 @@ defmodule RTSP.FileServer.Handler do
     :ok = MediaStreamer.start_streaming(state.streamer, media_contexts)
     {Response.new(200), state}
   end
+
+  @impl true
+  def handle_pause(state), do: {Response.new(501), state}
 
   @impl true
   def handle_teardown(state) do

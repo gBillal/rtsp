@@ -11,19 +11,26 @@ defmodule RTSP.FileServer do
 
   alias Membrane.RTSP.Server
 
+  @doc """
+  Starts an RTSP file server.
+  ## Options
+  - `:files` - a list of file paths to serve. Required.
+  - `:loop` - whether to loop the playback. Default is `true`.
+  - other options supported by `Membrane.RTSP.Server.start_link/1`.
+  """
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
-    GenServer.start_link(__MODULE__, opts, name: opts[:name])
+    {handler_options, server_options} = Keyword.split(opts, [:files, :loop])
+
+    server_options =
+      Keyword.merge(server_options, handler: __MODULE__.Handler, handler_config: handler_options)
+
+    Server.start_link(server_options)
   end
 
-  @impl true
-  def init(opts) do
-    {:ok, pid} =
-      Server.start_link(
-        port: opts[:port],
-        handler: __MODULE__.Handler,
-        handler_config: opts[:files]
-      )
-
-    {:ok, %{server_pid: pid}}
-  end
+  @doc """
+  Stops the RTSP file server.
+  """
+  @spec stop(GenServer.server()) :: :ok
+  def stop(server), do: Server.stop(server)
 end
