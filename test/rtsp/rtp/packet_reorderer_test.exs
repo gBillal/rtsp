@@ -57,9 +57,7 @@ defmodule RTSP.RTP.PacketReordererTest do
       end)
 
     output = List.flatten(output) ++ PacketReorderer.flush(jitter_buffer)
-
-    assert Enum.map(output, & &1.sequence_number) ==
-             Enum.map([first | packets], & &1.sequence_number)
+    assert output == [first | packets]
   end
 
   defp new_packet(seq) do
