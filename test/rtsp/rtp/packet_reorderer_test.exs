@@ -43,6 +43,23 @@ defmodule RTSP.RTP.PacketReordererTest do
              PacketReorderer.process(packet9, reorderer)
   end
 
+  test "Reoreder packets" do
+    seq = Enum.random(0..(2 ** 16 - 1))
+    [first | packets] = Enum.map(1..100_000, &new_packet(rem(&1 + seq, 2 ** 16)))
+
+    {output, jitter_buffer} =
+      packets
+      |> Enum.chunk_every(64)
+      |> Enum.flat_map(&Enum.shuffle/1)
+      |> then(&[first | &1])
+      |> Enum.map_reduce(PacketReorderer.new(64), fn packet, reorderer ->
+        PacketReorderer.process(packet, reorderer)
+      end)
+
+    output = List.flatten(output) ++ PacketReorderer.flush(jitter_buffer)
+    assert output == [first | packets]
+  end
+
   defp new_packet(seq) do
     %ExRTP.Packet{
       sequence_number: seq,
