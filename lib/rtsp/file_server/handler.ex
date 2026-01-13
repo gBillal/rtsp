@@ -10,7 +10,11 @@ defmodule RTSP.FileServer.Handler do
 
   @impl true
   def init(config) do
-    %{files: config[:files], streamer: nil}
+    %{
+      files: config[:files],
+      streamer: nil,
+      rate_control: Keyword.get(config, :rate_control, true)
+    }
   end
 
   @impl true
@@ -21,7 +25,8 @@ defmodule RTSP.FileServer.Handler do
     path = URI.parse(request.path).path
 
     with %{location: location} <- Enum.find(state.files, &(&1.path == path)),
-         {:ok, streamer} <- MediaStreamer.start_link(path: location, loop: state[:loop]) do
+         {:ok, streamer} <-
+           MediaStreamer.start_link(path: location, rate_control: state[:rate_control]) do
       sdp = %ExSDP{
         origin: %ExSDP.Origin{session_id: 0, session_version: 0, address: {127, 0, 0, 1}},
         media: MediaStreamer.sdp_medias(streamer)

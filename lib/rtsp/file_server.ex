@@ -12,18 +12,26 @@ defmodule RTSP.FileServer do
   @doc """
   Starts an RTSP file server.
   ## Options
-  - `:files` - a list of file paths to serve. Required.
-  - `:loop` - whether to loop the playback. Default is `true`.
+  - `files` - a list of file paths to serve. Required.
+  - `rate_control` - whether to enable rate control. Default is `true`.
   - other options supported by `Membrane.RTSP.Server.start_link/1`.
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
-    {handler_options, server_options} = Keyword.split(opts, [:files, :loop])
+    {handler_options, server_options} = Keyword.split(opts, [:files, :rate_control])
 
     server_options =
       Keyword.merge(server_options, handler: __MODULE__.Handler, handler_config: handler_options)
 
     Server.start_link(server_options)
+  end
+
+  @doc """
+  Returns the port number the server is listening on.
+  """
+  @spec port_number(GenServer.server()) :: {:ok, non_neg_integer()} | {:error, term()}
+  def port_number(server) do
+    Server.port_number(server)
   end
 
   @doc """
