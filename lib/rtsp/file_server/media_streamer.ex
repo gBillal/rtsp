@@ -14,6 +14,11 @@ defmodule RTSP.FileServer.MediaStreamer do
     GenServer.start_link(__MODULE__, opts, name: opts[:name])
   end
 
+  @spec sdp_medias(GenServer.server()) :: [ExSDP.Media.t()]
+  def sdp_medias(server) do
+    GenServer.call(server, :sdp_medias)
+  end
+
   def start_streaming(server, media_contexts) do
     GenServer.call(server, {:start_streaming, media_contexts})
   end
@@ -24,22 +29,27 @@ defmodule RTSP.FileServer.MediaStreamer do
 
   @impl true
   def init(opts) do
-    tracks =
-      Map.new(opts[:medias], fn {track_id, sdp_media} ->
-        mapping = ExSDP.get_attribute(sdp_media, RTPMapping)
-        {track_id, init_payloader(mapping)}
-      end)
+    with {:ok, reader_state} <- FileReader.init(opts[:path]) do
+      medias = FileReader.medias(reader_state)
 
-    reader_state = opts[:reader_state]
+      tracks =
+        Map.new(medias, fn {track_id, sdp_media} ->
+          mapping = ExSDP.get_attribute(sdp_media, RTPMapping)
+          {track_id, init_payloader(mapping)}
+        end)
 
-    {:ok,
-     %{
-       reader_state: reader_state,
-       tracks: tracks,
-       start_time: nil,
-       pending_samples: %{},
-       timer_ref: nil
-     }}
+      {:ok,
+       %{
+         path: opts[:path],
+         reader_state: reader_state,
+         sdp_medias: medias,
+         tracks: tracks,
+         start_time: nil,
+         pending_samples: %{},
+         timer_ref: nil,
+         loop: opts[:loop]
+       }}
+    end
   end
 
   @impl true
@@ -72,6 +82,10 @@ defmodule RTSP.FileServer.MediaStreamer do
          reader_state: reader_state,
          timer_ref: ref
      }}
+  end
+
+  def handle_call(:sdp_medias, _from, state) do
+    {:reply, Map.values(state.sdp_medias), state}
   end
 
   def handle_call(:stop, _from, state) do

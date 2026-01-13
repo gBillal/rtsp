@@ -6,7 +6,7 @@ defmodule RTSP.FileServer.Handler do
   require Logger
 
   alias Membrane.RTSP.Response
-  alias RTSP.FileServer.{FileReader, MediaStreamer}
+  alias RTSP.FileServer.MediaStreamer
 
   @impl true
   def init(config) do
@@ -21,13 +21,11 @@ defmodule RTSP.FileServer.Handler do
     path = URI.parse(request.path).path
 
     with %{location: location} <- Enum.find(state.files, &(&1.path == path)),
-         {:ok, medias, reader_state} <- init_reader(location) do
+         {:ok, streamer} <- MediaStreamer.start_link(path: location, loop: state[:loop]) do
       sdp = %ExSDP{
         origin: %ExSDP.Origin{session_id: 0, session_version: 0, address: {127, 0, 0, 1}},
-        media: Map.values(medias)
+        media: MediaStreamer.sdp_medias(streamer)
       }
-
-      {:ok, streamer} = MediaStreamer.start_link(medias: medias, reader_state: reader_state)
 
       respose =
         Response.new(200)
@@ -67,19 +65,5 @@ defmodule RTSP.FileServer.Handler do
   @impl true
   def handle_closed_connection(state) do
     if state.streamer, do: MediaStreamer.stop(state.streamer)
-  end
-
-  defp init_reader(path) do
-    ext = Path.extname(path)
-
-    cond do
-      ext == ".mp4" and Code.ensure_loaded?(ExMP4) ->
-        reader_state = FileReader.init(FileReader.MP4, {path, [:read, :binary]})
-        medias = FileReader.medias(reader_state)
-        {:ok, medias, reader_state}
-
-      true ->
-        {:error, :unsupported_file}
-    end
   end
 end

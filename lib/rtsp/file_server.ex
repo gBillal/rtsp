@@ -7,8 +7,6 @@ defmodule RTSP.FileServer do
   - MP4 files containing H.264, H265 and AAC codecs.
   """
 
-  use GenServer
-
   alias Membrane.RTSP.Server
 
   @doc """

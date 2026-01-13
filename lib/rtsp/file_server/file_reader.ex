@@ -1,6 +1,8 @@
 defmodule RTSP.FileServer.FileReader do
   @moduledoc false
 
+  alias __MODULE__.MP4
+
   @callback init(path :: Path.t()) :: struct()
 
   @callback medias(struct()) :: %{String.t() => ExSDP.Media.t()}
@@ -11,8 +13,16 @@ defmodule RTSP.FileServer.FileReader do
 
   defstruct [:mod, :state]
 
-  def init(mod, path) do
-    %__MODULE__{mod: mod, state: mod.init(path)}
+  def init(path) do
+    ext = Path.extname(path) |> String.downcase()
+
+    cond do
+      ext == ".mp4" and Code.ensure_loaded?(ExMP4) ->
+        {:ok, %__MODULE__{mod: MP4, state: MP4.init(path)}}
+
+      true ->
+        {:error, :unsupported_file}
+    end
   end
 
   def medias(state) do
