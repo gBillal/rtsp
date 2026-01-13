@@ -47,6 +47,8 @@ defmodule RTSP.RTP.PacketReorderer do
   def process(packet, %__MODULE__{} = jitter_buffer) do
     Logger.debug("Processing packet with sequence number: #{packet.sequence_number}")
     rel_pos = packet.sequence_number - jitter_buffer.expected_seq_no
+    # Handle sequence number wrap-around
+    # If rel_pos < -max_seq_no/2, it means that the sequence number has wrapped around
     rel_pos = if rel_pos < -(@max_seq_no >>> 1), do: rel_pos + @max_seq_no + 1, else: rel_pos
     do_process(jitter_buffer, packet, rel_pos)
   end
@@ -55,9 +57,7 @@ defmodule RTSP.RTP.PacketReorderer do
     :array.sparse_to_list(jitter_buffer.packets)
   end
 
-  defp do_process(jitter_buffer, packet, rel_pos) when rel_pos < 0 do
-    IO.inspect(packet.sequence_number, label: "Dropping late packet with sequence number")
-    IO.inspect(jitter_buffer.expected_seq_no, label: "Expected sequence number")
+  defp do_process(jitter_buffer, _packet, rel_pos) when rel_pos < 0 do
     {[], jitter_buffer}
   end
 
