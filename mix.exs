@@ -1,14 +1,14 @@
 defmodule RTSP.MixProject do
   use Mix.Project
 
-  @version "0.6.2"
+  @version "0.7.0"
   @github_url "https://github.com/gBillal/rtsp"
 
   def project do
     [
       app: :rtsp,
       version: @version,
-      elixir: "~> 1.15",
+      elixir: "~> 1.16",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       elixirc_paths: elixirc_paths(Mix.env()),
