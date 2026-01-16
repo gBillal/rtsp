@@ -164,6 +164,14 @@ defmodule RTSP.FileServer.MediaStreamer do
     }
   end
 
+  defp init_payloader(%{encoding: "AV1"} = mapping) do
+    %{
+      payloader: Encoder.AV1,
+      payloader_state: Encoder.AV1.init(payload_type: mapping.payload_type),
+      timescale: mapping.clock_rate
+    }
+  end
+
   defp init_payloader(%{encoding: "MPEG4-GENERIC"} = mapping) do
     %{
       payloader: Encoder.MPEG4Audio,
@@ -218,7 +226,7 @@ defmodule RTSP.FileServer.MediaStreamer do
 
   defp send_packets(packets, %{transport: :TCP, tcp_socket: socket} = ctx) do
     packets = Enum.map(packets, &[36, elem(ctx.channels, 0), <<byte_size(&1)::16>>, &1])
-    :gen_tcp.send(socket, packets)
+    :ok = :gen_tcp.send(socket, packets)
   end
 
   defp send_packets(packets, %{transport: :UDP} = ctx) do

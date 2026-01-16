@@ -115,6 +115,10 @@ if Code.ensure_loaded?(ExMP4) do
       }
     end
 
+    defp fmtp(%{media: :av1}, pt) do
+      %ExSDP.Attribute.FMTP{pt: pt}
+    end
+
     defp fmtp(%{media: :aac} = track, pt) do
       [descriptor] = MediaCodecs.MPEG4.parse_descriptors(track.priv_data.es_descriptor)
       asc = descriptor.dec_config_descr.decoder_specific_info
