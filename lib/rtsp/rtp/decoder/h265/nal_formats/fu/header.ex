@@ -54,11 +54,4 @@ defmodule RTSP.RTP.Decoder.H265.FU.Header do
   end
 
   def parse(_binary), do: {:error, :packet_malformed}
-
-  @doc """
-  Adds FU header
-  """
-  @spec add_header(binary(), 0 | 1, 0 | 1, NAL.Header.type()) :: binary()
-  def add_header(payload, start_bit, end_bit, type),
-    do: <<start_bit::1, end_bit::1, type::6>> <> payload
 end

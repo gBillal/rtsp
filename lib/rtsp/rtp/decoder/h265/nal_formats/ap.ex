@@ -97,10 +97,10 @@ defmodule RTSP.RTP.Decoder.H265.AP do
   @spec serialize([binary], 0..1, NAL.Header.nuh_layer_id(), NAL.Header.nuh_temporal_id_plus1()) ::
           binary
   def serialize(payloads, reserved, layer_id, t_id) do
-    payloads
-    |> Enum.reverse()
-    |> Enum.map(&<<byte_size(&1)::16, &1::binary>>)
-    |> IO.iodata_to_binary()
-    |> NAL.Header.add_header(reserved, NAL.Header.encode_type(:ap), layer_id, t_id)
+    header = <<reserved::1, NAL.Header.encode_type(:ap)::6, layer_id::6, t_id::3>>
+
+    for payload <- Enum.reverse(payloads), into: header do
+      <<byte_size(payload)::16, payload::binary>>
+    end
   end
 end

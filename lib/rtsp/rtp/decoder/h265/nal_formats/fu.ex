@@ -46,40 +46,24 @@ defmodule RTSP.RTP.Decoder.H265.FU do
   @spec serialize(binary(), pos_integer()) :: list(binary()) | {:error, :unit_too_small}
   def serialize(data, preferred_size) do
     case data do
-      <<header::2-binary, head::binary-size(preferred_size), rest::binary>> ->
-        <<r::1, type::6, layer_id::6, t_id::3>> = header
-
-        payload =
-          head
-          |> FU.Header.add_header(1, 0, type)
-          |> NAL.Header.add_header(r, NAL.Header.encode_type(:fu), layer_id, t_id)
-
-        [payload | do_serialize(rest, r, type, layer_id, t_id, preferred_size)]
+      <<r::1, type::6, h_r::9, head::binary-size(preferred_size - 3), rest::binary>> ->
+        header = <<r::1, NAL.Header.encode_type(:fu)::6, h_r::9>>
+        payload = <<header::binary, 1::1, 0::1, type::6, head::binary>>
+        [payload | do_serialize(rest, header, type, preferred_size - 3)]
 
       _data ->
         {:error, :unit_too_small}
     end
   end
 
-  defp do_serialize(data, r, type, layer_id, t_id, preferred_size) do
+  defp do_serialize(data, header, type, preferred_size) do
     case data do
-      <<head::binary-size(preferred_size), rest::binary>> ->
-        payload =
-          head
-          |> FU.Header.add_header(0, 0, type)
-          |> NAL.Header.add_header(r, NAL.Header.encode_type(:fu), layer_id, t_id)
-
-        [payload] ++ do_serialize(rest, r, type, layer_id, t_id, preferred_size)
-
-      <<>> ->
-        []
+      <<head::binary-size(preferred_size), rest::binary>> when byte_size(rest) > 0 ->
+        payload = <<header::binary, 0::1, 0::1, type::6, head::binary>>
+        [payload | do_serialize(rest, header, type, preferred_size)]
 
       rest ->
-        [
-          rest
-          |> FU.Header.add_header(0, 1, type)
-          |> NAL.Header.add_header(r, NAL.Header.encode_type(:fu), layer_id, t_id)
-        ]
+        [<<header::binary, 0::1, 1::1, type::6, rest::binary>>]
     end
   end
 
