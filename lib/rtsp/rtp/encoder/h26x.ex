@@ -8,11 +8,12 @@ defmodule RTSP.RTP.Encoder.H26x do
   alias RTSP.RTP.Decoder.H265
 
   @max_rtp_seq_no (1 <<< 16) - 1
+  @max_payload_size 1450
 
   def init(options, codec) do
     %{
       sequence_number: Keyword.get(options, :sequence_number, Enum.random(0..@max_rtp_seq_no)),
-      max_payload_size: Keyword.get(options, :max_payload_size, 1460),
+      max_payload_size: Keyword.get(options, :max_payload_size, @max_payload_size),
       payload_type: Keyword.get(options, :payload_type, 0),
       ssrc: Keyword.get(options, :ssrc, 0),
       codec: codec
