@@ -37,12 +37,13 @@ end
 The following media types are depayloaded and parsed:
 - H264
 - H265
-- AV1
+- [AV1](https://aomediacodec.github.io/av1-rtp-spec/v1.0.0.html)
 - AAC (lbr and hbr)
 - G711 (a-law and u-law)
 
 A payloader is available for the following media types:
 - H264
 - H265
+- [AV1](https://aomediacodec.github.io/av1-rtp-spec/v1.0.0.html)
 - AAC (lbr and hbr)
 - G711 (a-law and u-law)
