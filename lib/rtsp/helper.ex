@@ -48,6 +48,10 @@ defmodule RTSP.Helper do
     {Decoder.MPEG4Audio, Decoder.MPEG4Audio.init(:lbr)}
   end
 
+  def parser(:opus, _fmtp) do
+    {Decoder.Opus, Decoder.Opus.init([])}
+  end
+
   def parser(codec, _fmtp) when codec in [:pcmu, :pcma] do
     {Decoder.G711, Decoder.G711.init([])}
   end
