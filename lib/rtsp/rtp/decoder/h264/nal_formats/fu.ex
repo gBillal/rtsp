@@ -40,37 +40,24 @@ defmodule RTSP.RTP.Decoder.H264.FU do
   @spec serialize(binary(), pos_integer()) :: list(binary()) | {:error, :unit_too_small}
   def serialize(data, preferred_size) do
     case data do
-      <<header::1-binary, head::binary-size(preferred_size), rest::binary>> ->
-        <<r::1, nri::2, type::5>> = header
-
-        payload =
-          head
-          |> FU.Header.add_header(1, 0, type)
-          |> NAL.Header.add_header(r, nri, NAL.Header.encode_type(:fu_a))
-
-        [payload | do_serialize(rest, r, nri, type, preferred_size)]
+      <<h_p::3, type::5, fragment::binary-size(preferred_size - 2), rest::binary>> ->
+        header = <<h_p::3, NAL.Header.encode_type(:fu_a)::5>>
+        payload = <<header::binary, 1::1, 0::1, 0::1, type::5, fragment::binary>>
+        [payload | do_serialize(rest, header, type, preferred_size - 2)]
 
       _data ->
         {:error, :unit_too_small}
     end
   end
 
-  defp do_serialize(data, r, nri, type, preferred_size) do
+  defp do_serialize(data, header, type, preferred_size) do
     case data do
-      <<head::binary-size(preferred_size), rest::binary>> when byte_size(rest) > 0 ->
-        payload =
-          head
-          |> FU.Header.add_header(0, 0, type)
-          |> NAL.Header.add_header(r, nri, NAL.Header.encode_type(:fu_a))
-
-        [payload] ++ do_serialize(rest, r, nri, type, preferred_size)
+      <<fragment::binary-size(preferred_size), rest::binary>> when byte_size(rest) > 0 ->
+        payload = <<header::binary, 0::3, type::5, fragment::binary>>
+        [payload | do_serialize(rest, header, type, preferred_size)]
 
       rest ->
-        [
-          rest
-          |> FU.Header.add_header(0, 1, type)
-          |> NAL.Header.add_header(r, nri, NAL.Header.encode_type(:fu_a))
-        ]
+        [<<header::binary, 0::1, 1::1, 0::1, type::5, rest::binary>>]
     end
   end
 

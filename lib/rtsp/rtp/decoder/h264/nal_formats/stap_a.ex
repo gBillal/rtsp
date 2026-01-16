@@ -45,10 +45,10 @@ defmodule RTSP.RTP.Decoder.H264.StapA do
 
   @spec serialize([binary], 0..1, 0..3) :: binary
   def serialize(payloads, f, nri) do
-    payloads
-    |> Enum.reverse()
-    |> Enum.map(&<<byte_size(&1)::16, &1::binary>>)
-    |> IO.iodata_to_binary()
-    |> NAL.Header.add_header(f, nri, NAL.Header.encode_type(:stap_a))
+    header = <<f::1, nri::2, NAL.Header.encode_type(:stap_a)::5>>
+
+    for payload <- Enum.reverse(payloads),
+        into: header,
+        do: <<byte_size(payload)::16, payload::binary>>
   end
 end
