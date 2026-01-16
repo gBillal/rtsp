@@ -10,7 +10,6 @@ defmodule RTSP.RTP.Decoder.AV1.AggregationHeader do
 
   defstruct [:z, :y, :w, :n]
 
-  @compile {:inline, parse: 1}
   @doc """
   Decodes aggregation header.
 
