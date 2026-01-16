@@ -53,7 +53,8 @@ defmodule RTSP.RTP.EncodeDecodeTest do
         encoder = Encoder.AV1.init(max_payload_size: unquote(payload_size))
         decoder = Decoder.AV1.init([])
 
-        {packets, _state} = Encoder.AV1.handle_sample(@obus, 0, encoder)
+        # <<12, 00>> is a temporal delimiter OBU
+        {packets, _state} = Encoder.AV1.handle_sample(<<0x12, 0x00>> <> @obus, 0, encoder)
 
         {decoded_data, _state} =
           Enum.reduce(packets, {[], decoder}, fn packet, {tu, decoder} ->

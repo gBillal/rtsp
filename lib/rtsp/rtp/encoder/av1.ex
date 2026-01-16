@@ -34,6 +34,11 @@ defmodule RTSP.RTP.Encoder.AV1 do
   def handle_sample(obus, timestamp, state) when is_list(obus) do
     state =
       obus
+      |> Stream.reject(fn
+        # skip temporal delimiter obus
+        <<_::1, 2::4, _::bitstring>> -> true
+        _ -> false
+      end)
       |> Stream.map(&AV1.OBU.clear_size_flag/1)
       |> Enum.reduce(state, &push_obu/2)
 
