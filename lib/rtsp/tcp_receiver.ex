@@ -55,6 +55,16 @@ defmodule RTSP.TCPReceiver do
     {:noreply, state}
   end
 
+  def handle_info({:tcp_closed, _socket}, state) do
+    Logger.warning("[TCPReceiver] socket closed")
+    {:stop, :normal, state}
+  end
+
+  def handle_info({:tcp_error, _socket, reason}, state) do
+    Logger.warning("[TCPReceiver] received error: #{inspect(reason)}")
+    {:stop, reason, state}
+  end
+
   def handle_info(_msg, state) do
     {:noreply, state}
   end

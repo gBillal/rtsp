@@ -266,21 +266,6 @@ defmodule RTSP do
     :ok = :inet.setopts(state.socket, buffer: @initial_recv_buffer, active: 100)
     :ok = Membrane.RTSP.transfer_socket_control(state.rtsp_session, pid)
 
-    # pid =
-    #   spawn(fn ->
-    #     receiver =
-    #       TCPReceiver.new(
-    #         parent_pid: state.name,
-    #         receiver: state.receiver,
-    #         socket: state.socket,
-    #         rtsp_session: state.rtsp_session,
-    #         tracks: state.tracks,
-    #         onvif_replay: state.onvif_replay != []
-    #       )
-
-    #     TCPReceiver.start(receiver)
-    #   end)
-
     Process.monitor(pid)
     %{state | tcp_receiver: pid}
   end
@@ -288,8 +273,7 @@ defmodule RTSP do
   defp start_receivers(%{name: parent_pid, receiver: receiver} = state) do
     server_ip = ConnectionManager.get_server_ip(state)
 
-    state.tracks
-    |> Enum.map(fn track ->
+    Enum.map(state.tracks, fn track ->
       opts = [
         parent_pid: parent_pid,
         receiver: receiver,
