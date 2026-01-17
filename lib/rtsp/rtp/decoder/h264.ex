@@ -69,8 +69,10 @@ defmodule RTSP.RTP.Decoder.H264 do
 
     case FU.parse(data, seq_num, map_state_to_fu(state)) do
       {:ok, {data, type}} ->
-        data = NAL.Header.add_header(data, 0, header.nal_ref_idc, type)
-        {:ok, {[data], packet.timestamp, packet.marker}, %{state | fu_acc: nil}}
+        data = [<<0::1, header.nal_ref_idc::2, type::5>> | data]
+
+        {:ok, {[IO.iodata_to_binary(data)], packet.timestamp, packet.marker},
+         %{state | fu_acc: nil}}
 
       {:incomplete, fu} ->
         {:ok, {[], packet.timestamp, false}, %{state | fu_acc: fu}}

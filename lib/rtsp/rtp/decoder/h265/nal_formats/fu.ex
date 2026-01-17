@@ -11,7 +11,7 @@ defmodule RTSP.RTP.Decoder.H265.FU do
   #  +---------------+
   # ```
 
-  use Bunch
+  import Bitwise
 
   alias RTSP.RTP.Decoder.H265.NAL
 
@@ -27,7 +27,7 @@ defmodule RTSP.RTP.Decoder.H265.FU do
           don: don()
         }
 
-  defguardp is_next(last_seq_num, next_seq_num) when rem(last_seq_num + 1, 65_536) == next_seq_num
+  defguardp is_next(last_seq_num, next_seq_num) when (last_seq_num + 1 &&& 65_535) == next_seq_num
 
   @doc """
   Parses H265 Fragmentation Unit

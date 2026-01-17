@@ -62,9 +62,7 @@ defmodule RTSP.RTP.Decoder.H265 do
   end
 
   defp handle_unit_type(:fu, {header, data}, packet, state) do
-    %{sequence_number: seq_num} = packet
-
-    case FU.parse(data, seq_num, map_state_to_fu(state)) do
+    case FU.parse(data, packet.sequence_number, map_state_to_fu(state)) do
       {:ok, {data, type, _don}} ->
         data = [<<0::1, type::6, header.nuh_layer_id::6, header.nuh_temporal_id_plus1::3>> | data]
 
