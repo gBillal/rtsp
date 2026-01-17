@@ -23,16 +23,19 @@ defmodule RTSP.TCPReceiver do
             onvif_replay: boolean(),
             unprocessed_data: binary(),
             stream_handlers: map(),
-            timeout: non_neg_integer()
+            timeout: non_neg_integer(),
+            timer_ref: reference()
           }
 
     @enforce_keys [:receiver, :parent_pid, :socket, :rtsp_session, :tracks]
     defstruct @enforce_keys ++
                 [
+                  :timer_ref,
                   onvif_replay: false,
                   unprocessed_data: <<>>,
                   stream_handlers: %{},
-                  timeout: :timer.seconds(10)
+                  timeout: :timer.seconds(10),
+                  last_timestamp: nil
                 ]
   end
 
@@ -42,12 +45,15 @@ defmodule RTSP.TCPReceiver do
 
   @impl true
   def init(options) do
-    {:ok, struct!(State, options)}
+    state = struct!(State, options)
+    state = %{state | last_timestamp: System.monotonic_time(:millisecond)}
+    Process.send_after(self(), :check_idle, 2_000)
+    {:ok, state}
   end
 
   @impl true
   def handle_info({:tcp, _port, data}, state) do
-    {:noreply, do_handle_data(state, data)}
+    {:noreply, do_handle_data(%{state | last_timestamp: System.os_time(:microsecond)}, data)}
   end
 
   def handle_info({:tcp_passive, socket}, state) do
@@ -65,13 +71,22 @@ defmodule RTSP.TCPReceiver do
     {:stop, reason, state}
   end
 
+  def handle_info(:check_idle, state) do
+    # Hopefully there's no time warp
+    if System.os_time(:microsecond) - state.last_timestamp >= state.timeout * 1000 do
+      :gen_tcp.close(state.socket)
+      {:stop, :normal, state}
+    else
+      Process.send_after(self(), :check_idle, 2_000)
+      {:noreply, state}
+    end
+  end
+
   def handle_info(_msg, state) do
     {:noreply, state}
   end
 
   defp do_handle_data(receiver, data) do
-    datetime = DateTime.utc_now()
-
     {{rtp_packets, _rtcp_packets}, unprocessed_data} =
       split_packets(receiver.unprocessed_data <> data, receiver.rtsp_session, {[], []})
 
@@ -88,7 +103,7 @@ defmodule RTSP.TCPReceiver do
               rtp_packet.extensions && rtp_packet.extensions.timestamp
 
             _state ->
-              datetime
+              receiver.last_timestamp
           end
 
         {discontinuity?, sample, handler} =
