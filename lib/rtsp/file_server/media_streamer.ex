@@ -75,12 +75,9 @@ defmodule RTSP.FileServer.MediaStreamer do
       end)
 
     ref =
-      if state.rate_control do
-        {:ok, ref} = :timer.send_interval(20, :send_media)
-        ref
-      else
-        Process.send_after(self(), :send_all_media, 20)
-      end
+      if state.rate_control,
+        do: Process.send_after(self(), :send_media, 20),
+        else: Process.send_after(self(), :send_all_media, 20)
 
     {:reply, :ok,
      %{
@@ -129,6 +126,8 @@ defmodule RTSP.FileServer.MediaStreamer do
             {state, false}
         end
       end)
+
+    state = %{state | timer_ref: Process.send_after(self(), :send_media, 20)}
 
     if eof? do
       Logger.info("Reached end of file for all tracks")
