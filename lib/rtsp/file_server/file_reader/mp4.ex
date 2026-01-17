@@ -8,6 +8,8 @@ if Code.ensure_loaded?(ExMP4) do
 
     defstruct [:reader, :tracks, :filters]
 
+    @video_timescale 90_000
+
     @impl true
     def init(path) do
       reader = ExMP4.Reader.new!(path)
@@ -53,6 +55,7 @@ if Code.ensure_loaded?(ExMP4) do
             |> ExMP4.Reader.read_sample(sample_metadata)
             |> filter_sample(track_id, state)
 
+          sample = maybe_convert_timescale(track, sample)
           state = %{state | tracks: Map.put(state.tracks, track_id, track)}
           {{sample.payload, sample.dts, sample.pts, sample.sync?}, state}
       end
@@ -72,8 +75,8 @@ if Code.ensure_loaded?(ExMP4) do
           %ExSDP.Attribute.RTPMapping{
             payload_type: pt,
             encoding: encoding(track.media),
-            clock_rate: track.timescale,
-            params: if(track.media == :aac, do: "2")
+            clock_rate: if(track.type == :video, do: @video_timescale, else: track.timescale),
+            params: if(track.type == :audio, do: "2")
           }
         ]
       }
@@ -90,6 +93,16 @@ if Code.ensure_loaded?(ExMP4) do
           {sample, %{state | filters: filters}}
       end
     end
+
+    defp maybe_convert_timescale(%{type: :video, timescale: scale}, sample) do
+      %{
+        sample
+        | dts: div(sample.dts * @video_timescale, scale),
+          pts: div(sample.pts * @video_timescale, scale)
+      }
+    end
+
+    defp maybe_convert_timescale(_track, sample), do: sample
 
     defp encoding(:aac), do: "MPEG4-GENERIC"
     defp encoding(other), do: String.upcase("#{other}")
@@ -108,7 +121,6 @@ if Code.ensure_loaded?(ExMP4) do
     defp fmtp(%{media: :h265} = track, pt) do
       %ExSDP.Attribute.FMTP{
         pt: pt,
-        packetization_mode: 1,
         sprop_vps: track.priv_data.vps,
         sprop_sps: track.priv_data.sps,
         sprop_pps: track.priv_data.pps
@@ -124,6 +136,10 @@ if Code.ensure_loaded?(ExMP4) do
       asc = descriptor.dec_config_descr.decoder_specific_info
 
       "fmtp:#{pt} mode=AAC-hbr; sizeLength=13; indexLength=3; indexDeltaLength=3; constantDuration=1024; config=#{Base.encode16(asc, case: :upper)}"
+    end
+
+    defp fmtp(%{media: :opus}, pt) do
+      %ExSDP.Attribute.FMTP{pt: pt, stereo: true}
     end
 
     defp fmtp(track, _pt) do

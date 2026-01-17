@@ -75,12 +75,9 @@ defmodule RTSP.FileServer.MediaStreamer do
       end)
 
     ref =
-      if state.rate_control do
-        {:ok, ref} = :timer.send_interval(20, :send_media)
-        ref
-      else
-        Process.send_after(self(), :send_all_media, 20)
-      end
+      if state.rate_control,
+        do: Process.send_after(self(), :send_media, 20),
+        else: Process.send_after(self(), :send_all_media, 20)
 
     {:reply, :ok,
      %{
@@ -130,6 +127,8 @@ defmodule RTSP.FileServer.MediaStreamer do
         end
       end)
 
+    state = %{state | timer_ref: Process.send_after(self(), :send_media, 20)}
+
     if eof? do
       Logger.info("Reached end of file for all tracks")
       :timer.cancel(state.timer_ref)
@@ -176,6 +175,14 @@ defmodule RTSP.FileServer.MediaStreamer do
     %{
       payloader: Encoder.MPEG4Audio,
       payloader_state: Encoder.MPEG4Audio.init(mode: :hbr, payload_type: mapping.payload_type),
+      timescale: mapping.clock_rate
+    }
+  end
+
+  defp init_payloader(%{encoding: "OPUS"} = mapping) do
+    %{
+      payloader: Encoder.Opus,
+      payloader_state: Encoder.Opus.init(payload_type: mapping.payload_type),
       timescale: mapping.clock_rate
     }
   end
