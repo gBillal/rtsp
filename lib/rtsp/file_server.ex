@@ -39,4 +39,12 @@ defmodule RTSP.FileServer do
   """
   @spec stop(GenServer.server()) :: :ok
   def stop(server), do: Server.stop(server)
+
+  def child_spec(opts) do
+    %{
+      id: __MODULE__,
+      start: {__MODULE__, :start_link, [opts]},
+      type: :supervisor
+    }
+  end
 end

@@ -179,6 +179,14 @@ defmodule RTSP.FileServer.MediaStreamer do
     }
   end
 
+  defp init_payloader(%{encoding: "OPUS"} = mapping) do
+    %{
+      payloader: Encoder.Opus,
+      payloader_state: Encoder.Opus.init(payload_type: mapping.payload_type),
+      timescale: mapping.clock_rate
+    }
+  end
+
   defp do_send_media(tracks, _reader) when map_size(tracks) == 0, do: :ok
 
   defp do_send_media(tracks, reader) do

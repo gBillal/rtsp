@@ -76,7 +76,7 @@ if Code.ensure_loaded?(ExMP4) do
             payload_type: pt,
             encoding: encoding(track.media),
             clock_rate: if(track.type == :video, do: @video_timescale, else: track.timescale),
-            params: if(track.media == :aac, do: "2")
+            params: if(track.type == :audio, do: "2")
           }
         ]
       }
@@ -136,6 +136,10 @@ if Code.ensure_loaded?(ExMP4) do
       asc = descriptor.dec_config_descr.decoder_specific_info
 
       "fmtp:#{pt} mode=AAC-hbr; sizeLength=13; indexLength=3; indexDeltaLength=3; constantDuration=1024; config=#{Base.encode16(asc, case: :upper)}"
+    end
+
+    defp fmtp(%{media: :opus}, pt) do
+      %ExSDP.Attribute.FMTP{pt: pt, stereo: true}
     end
 
     defp fmtp(track, _pt) do
