@@ -252,23 +252,34 @@ defmodule RTSP do
   end
 
   defp start_receivers(%{transport: :tcp} = state) do
-    :ok = :inet.setopts(state.socket, buffer: @initial_recv_buffer, active: false)
-    :ok = Membrane.RTSP.transfer_socket_control(state.rtsp_session, self())
+    options = [
+      parent_pid: state.name,
+      receiver: state.receiver,
+      socket: state.socket,
+      rtsp_session: state.rtsp_session,
+      tracks: state.tracks,
+      onvif_replay: state.onvif_replay != []
+    ]
 
-    pid =
-      spawn(fn ->
-        receiver =
-          TCPReceiver.new(
-            parent_pid: state.name,
-            receiver: state.receiver,
-            socket: state.socket,
-            rtsp_session: state.rtsp_session,
-            tracks: state.tracks,
-            onvif_replay: state.onvif_replay != []
-          )
+    {:ok, pid} = TCPReceiver.start(options)
 
-        TCPReceiver.start(receiver)
-      end)
+    :ok = :inet.setopts(state.socket, buffer: @initial_recv_buffer, active: 100)
+    :ok = Membrane.RTSP.transfer_socket_control(state.rtsp_session, pid)
+
+    # pid =
+    #   spawn(fn ->
+    #     receiver =
+    #       TCPReceiver.new(
+    #         parent_pid: state.name,
+    #         receiver: state.receiver,
+    #         socket: state.socket,
+    #         rtsp_session: state.rtsp_session,
+    #         tracks: state.tracks,
+    #         onvif_replay: state.onvif_replay != []
+    #       )
+
+    #     TCPReceiver.start(receiver)
+    #   end)
 
     Process.monitor(pid)
     %{state | tcp_receiver: pid}
