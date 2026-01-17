@@ -1,20 +1,28 @@
 defmodule RTSP.RTP.Decoder.H264.FU do
   @moduledoc false
   # Module responsible for parsing H264 Fragmentation Unit.
+  #
+  #  Fragmentation Unit Header
+  #  # ```
+  #   +---------------+
+  #   |0|1|2|3|4|5|6|7|
+  #   +-+-+-+-+-+-+-+-+
+  #   |S|E|R|  Type   |
+  #   +---------------+
+  # ```
 
-  use Bunch
+  import Bitwise
 
-  alias __MODULE__
   alias RTSP.RTP.Decoder.H264.NAL
 
   defstruct [:last_seq_num, data: []]
 
   @type t :: %__MODULE__{
-          data: [binary()],
+          data: iodata(),
           last_seq_num: nil | non_neg_integer()
         }
 
-  defguardp is_next(last_seq_num, next_seq_num) when rem(last_seq_num + 1, 65_536) == next_seq_num
+  defguardp is_next(last_seq_num, next_seq_num) when (last_seq_num + 1 &&& 65_535) == next_seq_num
 
   @doc """
   Parses H264 Fragmentation Unit
@@ -28,11 +36,16 @@ defmodule RTSP.RTP.Decoder.H264.FU do
           {:ok, {binary(), NAL.Header.type()}}
           | {:error, :packet_malformed | :invalid_first_packet}
           | {:incomplete, t()}
-  def parse(data, seq_num, acc) do
-    with {:ok, {header, value}} <- FU.Header.parse(data) do
-      do_parse(header, value, seq_num, acc)
-    end
+  def parse(<<1::1, 1::1, _type::bitstring>>, _seq_num, _acc) do
+    {:error, :packet_malformed}
   end
+
+  def parse(<<first_f::1, last_f::1, 0::1, type::5, rest::binary>>, seq_num, acc)
+      when type in 1..23 do
+    do_parse({first_f, last_f, type}, rest, seq_num, acc)
+  end
+
+  def parse(_data, _seq_num, _acc), do: {:error, :invalid_packet}
 
   @doc """
   Serialize H264 unit into list of FU-A payloads
@@ -63,23 +76,16 @@ defmodule RTSP.RTP.Decoder.H264.FU do
 
   defp do_parse(header, data, seq_num, acc)
 
-  defp do_parse(%FU.Header{start_bit: true}, data, seq_num, acc),
-    do: {:incomplete, %__MODULE__{acc | data: [data], last_seq_num: seq_num}}
+  defp do_parse({1, _, _}, data, seq_num, acc) do
+    {:incomplete, %{acc | data: [data], last_seq_num: seq_num}}
+  end
 
-  defp do_parse(%FU.Header{start_bit: false}, _data, _seq_num, %__MODULE__{last_seq_num: nil}),
-    do: {:error, :invalid_first_packet}
+  defp do_parse({0, _, _}, _data, _seq_num, %__MODULE__{last_seq_num: nil}) do
+    {:error, :invalid_first_packet}
+  end
 
-  defp do_parse(%FU.Header{end_bit: true, type: type}, data, seq_num, %__MODULE__{
-         data: acc,
-         last_seq_num: last
-       })
-       when is_next(last, seq_num) do
-    result =
-      [data | acc]
-      |> Enum.reverse()
-      |> Enum.join()
-
-    {:ok, {result, type}}
+  defp do_parse({_, 1, type}, data, seq_num, acc) when is_next(acc.last_seq_num, seq_num) do
+    {:ok, {Enum.reverse([data | acc.data]), type}}
   end
 
   defp do_parse(_header, data, seq_num, %__MODULE__{data: acc, last_seq_num: last} = fu)

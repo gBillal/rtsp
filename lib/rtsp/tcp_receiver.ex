@@ -1,6 +1,8 @@
 defmodule RTSP.TCPReceiver do
   @moduledoc false
 
+  use GenServer
+
   require Logger
 
   import RTSP.PacketSplitter
@@ -9,46 +11,82 @@ defmodule RTSP.TCPReceiver do
   alias RTSP.RTP.OnvifReplayExtension
   alias RTSP.StreamHandler
 
-  @type t :: %__MODULE__{
-          parent_pid: pid(),
-          receiver: pid(),
-          socket: :inet.socket(),
-          rtsp_session: Membrane.RTSP.t(),
-          tracks: [RTSP.track()],
-          onvif_replay: boolean(),
-          unprocessed_data: binary(),
-          stream_handlers: map(),
-          timeout: non_neg_integer()
-        }
+  @active_mode 200
 
-  @enforce_keys [:receiver, :parent_pid, :socket, :rtsp_session, :tracks]
-  defstruct @enforce_keys ++
-              [
-                onvif_replay: false,
-                unprocessed_data: <<>>,
-                stream_handlers: %{},
-                timeout: :timer.seconds(10)
-              ]
+  defmodule State do
+    @type t :: %__MODULE__{
+            parent_pid: pid(),
+            receiver: pid(),
+            socket: :inet.socket(),
+            rtsp_session: Membrane.RTSP.t(),
+            tracks: [RTSP.track()],
+            onvif_replay: boolean(),
+            unprocessed_data: binary(),
+            stream_handlers: map(),
+            timeout: non_neg_integer(),
+            timer_ref: reference()
+          }
 
-  @spec new(keyword()) :: t()
-  def new(options), do: struct!(__MODULE__, options)
+    @enforce_keys [:receiver, :parent_pid, :socket, :rtsp_session, :tracks]
+    defstruct @enforce_keys ++
+                [
+                  :timer_ref,
+                  onvif_replay: false,
+                  unprocessed_data: <<>>,
+                  stream_handlers: %{},
+                  timeout: :timer.seconds(10),
+                  last_timestamp: nil
+                ]
+  end
 
-  def start(receiver) do
-    case :gen_tcp.recv(receiver.socket, 0, receiver.timeout) do
-      {:ok, data} ->
-        receiver
-        |> do_handle_data(data)
-        |> start()
+  def start(opts) do
+    GenServer.start(__MODULE__, opts)
+  end
 
-      {:error, reason} ->
-        Logger.error("Error receiving data: #{inspect(reason)}")
-        :ok
+  @impl true
+  def init(options) do
+    state = struct!(State, options)
+    state = %{state | last_timestamp: System.monotonic_time(:millisecond)}
+    Process.send_after(self(), :check_idle, 2_000)
+    {:ok, state}
+  end
+
+  @impl true
+  def handle_info({:tcp, _port, data}, state) do
+    {:noreply, do_handle_data(%{state | last_timestamp: System.os_time(:microsecond)}, data)}
+  end
+
+  def handle_info({:tcp_passive, socket}, state) do
+    :ok = :inet.setopts(socket, active: @active_mode)
+    {:noreply, state}
+  end
+
+  def handle_info({:tcp_closed, _socket}, state) do
+    Logger.warning("[TCPReceiver] socket closed")
+    {:stop, :normal, state}
+  end
+
+  def handle_info({:tcp_error, _socket, reason}, state) do
+    Logger.warning("[TCPReceiver] received error: #{inspect(reason)}")
+    {:stop, reason, state}
+  end
+
+  def handle_info(:check_idle, state) do
+    # Hopefully there's no time warp
+    if System.os_time(:microsecond) - state.last_timestamp >= state.timeout * 1000 do
+      :gen_tcp.close(state.socket)
+      {:stop, :normal, state}
+    else
+      Process.send_after(self(), :check_idle, 2_000)
+      {:noreply, state}
     end
   end
 
-  defp do_handle_data(receiver, data) do
-    datetime = DateTime.utc_now()
+  def handle_info(_msg, state) do
+    {:noreply, state}
+  end
 
+  defp do_handle_data(receiver, data) do
     {{rtp_packets, _rtcp_packets}, unprocessed_data} =
       split_packets(receiver.unprocessed_data <> data, receiver.rtsp_session, {[], []})
 
@@ -61,11 +99,11 @@ defmodule RTSP.TCPReceiver do
 
         datetime =
           case receiver do
-            %__MODULE__{onvif_replay: true} ->
+            %{onvif_replay: true} ->
               rtp_packet.extensions && rtp_packet.extensions.timestamp
 
             _state ->
-              datetime
+              receiver.last_timestamp
           end
 
         {discontinuity?, sample, handler} =
