@@ -7,7 +7,7 @@ defmodule RTSP.Server.ClientHandler do
 
   @doc """
   Callback invoked to initialize a handler.
-  
+
   The returned term is passed as
   """
   @callback init(options :: keyword()) :: state()
