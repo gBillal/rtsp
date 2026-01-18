@@ -98,7 +98,3 @@ defmodule RTSP.Server.InnerHandler do
   @impl true
   def handle_closed_connection(state), do: state
 end
-
-defmodule TestHandler do
-  use RTSP.Server.ClientHandler
-end
