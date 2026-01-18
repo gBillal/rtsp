@@ -279,7 +279,14 @@ defmodule RTSP do
         receiver: receiver,
         track: track,
         reorder_queue_size: state.reorder_queue_size,
-        server_ip: server_ip
+        server_ip: server_ip,
+        callback: fn
+          _control_path, :discontinuity ->
+            send(receiver, {:rtsp, parent_pid, :discontinuity})
+
+          control_path, sample ->
+            send(receiver, {:rtsp, parent_pid, {control_path, sample}})
+        end
       ]
 
       {:ok, pid} = UDPReceiver.start(opts)

@@ -60,6 +60,30 @@ defmodule RTSP.Helper do
     raise "Unsupported codec for RTP depayloader: #{inspect(other_codec)}"
   end
 
+  @spec get_tracks(%{body: ExSDP.t()}, [atom()]) :: [map()]
+  def get_tracks(%{body: %ExSDP{media: media_list}}, stream_types \\ []) do
+    media_list
+    |> Enum.filter(&(stream_types == [] or &1.type in stream_types))
+    |> Enum.map(fn media ->
+      %{
+        control_path: get_attribute(media, "control", ""),
+        type: media.type,
+        rtpmap: get_attribute(media, ExSDP.Attribute.RTPMapping),
+        fmtp: get_attribute(media, ExSDP.Attribute.FMTP),
+        transport: nil,
+        server_port: nil
+      }
+    end)
+  end
+
+  defp get_attribute(video_attributes, attribute, default \\ nil) do
+    case ExSDP.get_attribute(video_attributes, attribute) do
+      {^attribute, value} -> value
+      %^attribute{} = value -> value
+      _other -> default
+    end
+  end
+
   # An issue with one of Milesight camera where the parameter sets have
   # <<0, 0, 0, 1>> at the end
   defp clean_parameter_set(ps) do
