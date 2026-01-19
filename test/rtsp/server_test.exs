@@ -11,10 +11,6 @@ defmodule RTSP.ServerTest do
   a=control:track=1
   a=fmtp:96 packetization-mode=1;sprop-parameter-sets=Z0LAFIxoPE3l/8AiACHAeEQjUA==,aM48gA==
   a=rtpmap:96 H264/15360
-  m=audio 0 RTP/AVP 97
-  a=control:track=2
-  a=fmtp:97 mode=AAC-hbr; sizeLength=13; indexLength=3; indexDeltaLength=3; constantDuration=1024; config=119056E500
-  a=rtpmap:97 MPEG4-GENERIC/48000/2
   """
 
   defmodule Handler do
@@ -36,6 +32,7 @@ defmodule RTSP.ServerTest do
     test "connect to server", %{url: url} do
       {pid, rtp_socket, rtcp_socket} = publish(url)
       assert is_pid(pid)
+
       :gen_udp.close(rtp_socket)
       :gen_udp.close(rtcp_socket)
       Membrane.RTSP.close(pid)
@@ -75,6 +72,7 @@ defmodule RTSP.ServerTest do
       :gen_udp.close(rtp_socket)
       :gen_udp.close(rtcp_socket)
       Membrane.RTSP.close(pid)
+      Process.sleep(100)
     end
   end
 
