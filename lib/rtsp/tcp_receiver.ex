@@ -53,7 +53,7 @@ defmodule RTSP.TCPReceiver do
 
   @impl true
   def handle_info({:tcp, _port, data}, state) do
-    {:noreply, do_handle_data(%{state | last_timestamp: System.os_time(:microsecond)}, data)}
+    {:noreply, do_handle_data(%{state | last_timestamp: System.os_time(:millisecond)}, data)}
   end
 
   def handle_info({:tcp_passive, socket}, state) do
@@ -73,7 +73,7 @@ defmodule RTSP.TCPReceiver do
 
   def handle_info(:check_idle, state) do
     # Hopefully there's no time warp
-    if System.os_time(:microsecond) - state.last_timestamp >= state.timeout * 1000 do
+    if System.os_time(:millisecond) - state.last_timestamp >= state.timeout do
       :gen_tcp.close(state.socket)
       {:stop, :normal, state}
     else

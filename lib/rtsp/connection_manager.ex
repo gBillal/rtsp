@@ -115,7 +115,7 @@ defmodule RTSP.ConnectionManager do
 
     case Membrane.RTSP.describe(rtsp_session, @content_type_header) do
       {:ok, %{status: 200} = response} ->
-        tracks = get_tracks(response, state.allowed_media_types)
+        tracks = RTSP.Helper.get_tracks(response, state.allowed_media_types)
         {:ok, %{state | tracks: tracks}}
 
       {:ok, %{status: 401}} ->
@@ -231,33 +231,6 @@ defmodule RTSP.ConnectionManager do
 
       _error ->
         true
-    end
-  end
-
-  @spec get_tracks(Membrane.RTSP.Response.t(), media_types()) :: [RTSP.track()]
-  defp get_tracks(%{body: %ExSDP{media: media_list}}, stream_types) do
-    media_list
-    |> Enum.filter(&(&1.type in stream_types))
-    |> Enum.map(fn media ->
-      %{
-        control_path: get_attribute(media, "control", ""),
-        type: media.type,
-        rtpmap: get_attribute(media, ExSDP.Attribute.RTPMapping),
-        fmtp: get_attribute(media, ExSDP.Attribute.FMTP),
-        transport: nil,
-        server_port: nil
-      }
-    end)
-  end
-
-  @spec get_attribute(ExSDP.Media.t(), ExSDP.Attribute.key(), default) ::
-          ExSDP.Attribute.t() | default
-        when default: var
-  defp get_attribute(video_attributes, attribute, default \\ nil) do
-    case ExSDP.get_attribute(video_attributes, attribute) do
-      {^attribute, value} -> value
-      %^attribute{} = value -> value
-      _other -> default
     end
   end
 
