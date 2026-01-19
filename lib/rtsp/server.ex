@@ -33,6 +33,14 @@ defmodule RTSP.Server do
 
   defdelegate stop(server, opts \\ []), to: Server
 
+  def child_spec(opts) do
+    %{
+      id: __MODULE__,
+      start: {__MODULE__, :start_link, [opts]},
+      type: :supervisor
+    }
+  end
+
   defp get_config(opts) do
     {handler_opts, opts} = Keyword.split(opts, [:handler, :handler_config])
     Keyword.merge(opts, handler: __MODULE__.InnerHandler, handler_config: handler_opts)

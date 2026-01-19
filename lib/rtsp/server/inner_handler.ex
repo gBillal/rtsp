@@ -34,8 +34,8 @@ defmodule RTSP.Server.InnerHandler do
       {:ok, handler_state} ->
         {Response.new(200), %{state | handler_state: handler_state, tracks: tracks}}
 
-      {:error, reason} ->
-        {Response.new(400) |> Response.with_body(reason), state}
+      {:error, _reason} ->
+        {Response.new(452), state}
     end
   end
 
@@ -97,4 +97,8 @@ defmodule RTSP.Server.InnerHandler do
 
   @impl true
   def handle_closed_connection(state), do: state
+end
+
+defmodule TestHandler do
+  use RTSP.Server.ClientHandler
 end
