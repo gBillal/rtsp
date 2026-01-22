@@ -1,10 +1,18 @@
 defmodule RTSP.Server.ClientSession do
-  @moduledoc false
+  @moduledoc """
+  Module handling a RTSP client session once connected to a server.
+  """
 
   use GenServer
 
   alias RTSP.RTPReceiver
 
+  @doc """
+  Starts a client session.
+
+  This should be started automatically by the RTSP server when a new client connects.
+  """
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts)
   end
@@ -24,8 +32,12 @@ defmodule RTSP.Server.ClientSession do
     GenServer.call(pid, :tracks)
   end
 
-  def close(pid) do
-    GenServer.call(pid, :close)
+  @doc """
+  Closes the client session.
+  """
+  @spec close(GenServer.server()) :: :ok
+  def close(server) do
+    GenServer.call(server, :close)
   end
 
   @impl true
