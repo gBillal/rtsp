@@ -64,9 +64,16 @@ defmodule RTSP.MixProject do
         "LICENSE"
       ],
       nest_modules_by_prefix: [
+        RTSP.Server,
         RTSP.RTP
       ],
       groups_for_modules: [
+        core: [
+          RTSP,
+          ~r/RTSP\.Server($|\.)/,
+          RTSP.FileServer,
+          ~r/RTSP\.RTPReceiver($|\.)/,
+        ],
         RTP: [
           RTSP.RTP.Encoder,
           RTSP.RTP.Decoder,

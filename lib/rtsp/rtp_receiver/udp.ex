@@ -1,12 +1,18 @@
 defmodule RTSP.RTPReceiver.UDP do
-  @moduledoc false
-  # Parse incoming RTP packets over UDP
+  @moduledoc """
+  Module processing rtp/rtcp data coming from UDP sockets.
+
+  This module handles:
+  - RTP packet parsing
+  - Packet reordering
+  - Stream handling (decoding RTP payloads into samples)
+  """
 
   alias RTSP.RTP.PacketReorderer
 
   import RTSP.Helper
 
-  @type t :: %__MODULE__{
+  @opaque t :: %__MODULE__{
           socket: :inet.socket(),
           rtcp_socket: :inet.socket(),
           track: RTSP.track(),
@@ -16,6 +22,9 @@ defmodule RTSP.RTPReceiver.UDP do
 
   defstruct [:socket, :rtcp_socket, :track, :packet_reorderer, :stream_handler]
 
+  @doc """
+  Creates a new UDP RTP receiver.
+  """
   @spec new(:inet.socket(), :inet.socket(), RTSP.track()) :: t()
   @spec new(:inet.socket(), :inet.socket(), RTSP.track(), keyword()) :: t()
   def new(socket, rtcp_socket, track, opts \\ []) do
@@ -38,7 +47,10 @@ defmodule RTSP.RTPReceiver.UDP do
     }
   end
 
-  @spec process(binary(), t()) :: {list(), t()}
+  @doc """
+  Processes an incoming RTP packet.
+  """
+  @spec process(binary(), t()) :: {list({:discontinuity, String.t()} | {String.t(), tuple()}), t()}
   def process(packet, state) do
     datetime = System.os_time(:millisecond)
 
@@ -69,6 +81,9 @@ defmodule RTSP.RTPReceiver.UDP do
     {Enum.reverse(events), state}
   end
 
+  @doc """
+  Closes the UDP RTP receiver sockets.
+  """
   @spec close(t()) :: :ok
   def close(state) do
     :gen_udp.close(state.socket)
