@@ -8,10 +8,12 @@ defmodule RTSP.Server.InnerHandler do
   alias Membrane.RTSP.Response
   alias RTSP.Server.ClientSession
 
+  @udp_recbuf_size 1_000_000
+
   @impl true
   def init(config) do
     {:ok, client_session} = ClientSession.start_link(config)
-    %{path: nil, client_session: client_session}
+    %{path: nil, client_session: client_session, recbuf: config[:udp_recbuf_size] || @udp_recbuf_size}
   end
 
   @impl true
@@ -69,7 +71,7 @@ defmodule RTSP.Server.InnerHandler do
         Enum.each(configured_media_context, fn {_key, ctx} ->
           :ok = :gen_udp.controlling_process(ctx.rtp_socket, state.client_session)
           :ok = :gen_udp.controlling_process(ctx.rtcp_socket, state.client_session)
-          :ok = :inet.setopts(ctx.rtp_socket, active: true)
+          :ok = :inet.setopts(ctx.rtp_socket, active: true, recbuf: state.recbuf)
           :ok = :inet.setopts(ctx.rtcp_socket, active: true)
         end)
 
