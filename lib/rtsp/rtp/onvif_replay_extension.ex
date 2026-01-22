@@ -8,7 +8,7 @@ defmodule RTSP.RTP.OnvifReplayExtension do
   @two_to_pow_32 2 ** 32
 
   @type t :: %__MODULE__{
-          timestamp: DateTime.t(),
+          timestamp: non_neg_integer(),
           keyframe?: boolean(),
           discontinuity?: boolean(),
           last_frame?: boolean()
@@ -32,6 +32,7 @@ defmodule RTSP.RTP.OnvifReplayExtension do
   defp from_ntp_timestamp(<<ntp_seconds::32, ntp_fraction::32>>) do
     fractional = div(ntp_fraction * @second, @two_to_pow_32)
     unix_seconds = (ntp_seconds - @ntp_unix_epoch_diff) * @second
-    div(unix_seconds + fractional, 1000)
+    # return timestamp in milliseconds
+    div(unix_seconds + fractional, 1000_000)
   end
 end

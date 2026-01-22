@@ -92,16 +92,16 @@ defmodule RTSP.StreamHandler do
     # Check for forward or backward rollover
     {acc, timestamp} =
       cond do
+        delta >= 0 ->
+          base_ext = base_ext + delta
+          {{rtp_timestamp, base_ext}, base_ext}
+
         delta < -@max_delta_timestamp ->
           base_ext = base_ext + (delta &&& @timestamp_limit)
           {{rtp_timestamp, base_ext}, base_ext}
 
-        delta < 0 ->
-          {{base_ts, base_ext}, base_ext + delta}
-
         true ->
-          base_ext = base_ext + delta
-          {{rtp_timestamp, base_ext}, base_ext}
+          {{base_ts, base_ext}, base_ext + delta}
       end
 
     {%{handler | timestamps: acc}, %{packet | timestamp: timestamp - handler.timestamp_offset}}
