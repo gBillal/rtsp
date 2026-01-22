@@ -18,6 +18,7 @@ defmodule RTSP.ServerTest do
 
     def handle_media(control_path, sample, pid) do
       send(pid, {control_path, sample})
+      pid
     end
   end
 

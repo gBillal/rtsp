@@ -3,30 +3,11 @@ defmodule RTSP.UDPReceiver do
 
   require Logger
 
-  import RTSP.Helper
-
-  alias RTSP.RTP.PacketReorderer
-  alias RTSP.StreamHandler
+  alias RTSP.RTPReceiver
 
   use GenServer
 
   @buffer_size 2_000_000
-
-  defmodule State do
-    @moduledoc false
-
-    @type t :: %__MODULE__{
-            socket: :inet.socket(),
-            rtcp_socket: :inet.socket(),
-            track: RTSP.track(),
-            packet_reorderer: PacketReorderer.t(),
-            stream_handler: RTSP.StreamHandler.t() | nil,
-            callback: (String.t(), tuple() | :discontinuity -> :ok)
-          }
-
-    @enforce_keys [:packet_reorderer]
-    defstruct @enforce_keys ++ [:socket, :rtcp_socket, :track, :stream_handler, :callback]
-  end
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts)
@@ -44,60 +25,51 @@ defmodule RTSP.UDPReceiver do
   @impl true
   def init(options) do
     track = options[:track]
+    {:udp, rtp_port, rtcp_port} = track[:transport]
 
-    # check if the sockets already open
-    {socket, rtcp_socket, probe?} =
-      case track[:transport] do
-        {:udp, rtp_port, rtcp_port} ->
-          {:ok, socket} = :gen_udp.open(rtp_port, [:binary, active: true])
-          {:ok, rtcp_socket} = :gen_udp.open(rtcp_port, [:binary, active: true])
-          {socket, rtcp_socket, true}
-
-        _ ->
-          {options[:socket], options[:rtcp_socket], false}
-      end
-
+    {:ok, socket} = :gen_udp.open(rtp_port, [:binary, active: true])
+    {:ok, rtcp_socket} = :gen_udp.open(rtcp_port, [:binary, active: true])
     :ok = :inet.setopts(socket, buffer: @buffer_size, recbuf: @buffer_size)
 
-    encoding = track.rtpmap.encoding |> String.downcase() |> String.to_atom()
-    {parser_mod, parser_state} = parser(encoding, track.fmtp)
-
-    stream_handler = %StreamHandler{
-      clock_rate: track.rtpmap.clock_rate,
-      parser_mod: parser_mod,
-      parser_state: parser_state,
-      control_path: track.control_path
-    }
-
-    state = %State{
+    state = %{
       socket: socket,
-      rtcp_socket: rtcp_socket,
-      stream_handler: stream_handler,
-      packet_reorderer: PacketReorderer.new(options[:reorder_queue_size] || 64),
-      track: track,
-      callback: options[:callback] || fn _, _ -> :ok end
+      parser:
+        RTPReceiver.UDP.new(socket, rtcp_socket, track,
+          reorder_queue_size: options[:reorder_queue_size] || 64
+        ),
+      receiver: options[:receiver],
+      parent_pid: options[:parent_pid]
     }
 
-    if probe? do
-      send_empty_packets(socket, rtcp_socket, options[:server_ip], track.server_port)
-    end
+    send_empty_packets(socket, rtcp_socket, options[:server_ip], track.server_port)
 
     {:ok, state}
   end
 
   @impl true
-  def handle_info({:udp, socket, _ip, _port, data}, %State{socket: socket} = state) do
-    {:noreply, handle_data(state, data)}
+  def handle_info({:udp, socket, _ip, _port, data}, %{socket: socket} = state) do
+    {events, parser} = RTPReceiver.UDP.process(data, state.parser)
+
+    Enum.each(events, fn
+      {:discontinuity, _control_path} ->
+        send(state.receiver, {:rtsp, state.parent_pid, :discontinuity})
+
+      {control_path, sample} ->
+        send(state.receiver, {:rtsp, state.parent_pid, {control_path, sample}})
+    end)
+
+    {:noreply, %{state | parser: parser}}
   end
 
   @impl true
-  def handle_info({:udp, socket, _ip, _port, _data}, %State{rtcp_socket: socket} = state) do
+  def handle_info({:udp, _socket, _ip, _port, _data}, state) do
     {:noreply, state}
   end
 
   @impl true
-  def handle_info({:udp_error, socket, reason}, %State{socket: socket} = state) do
+  def handle_info({:udp_error, _socket, reason}, state) do
     Logger.error("[UDPReceiver] UDP error: #{inspect(reason)}")
+    RTPReceiver.UDP.close(state.parser)
     {:stop, :normal, state}
   end
 
@@ -108,30 +80,8 @@ defmodule RTSP.UDPReceiver do
 
   @impl true
   def terminate(_reason, state) do
-    :ok = :gen_udp.close(state.socket)
-    :ok = :gen_udp.close(state.rtcp_socket)
-  end
-
-  defp handle_data(receiver, packet) do
-    datetime = System.os_time(:millisecond)
-
-    {packets, packet_reorderer} =
-      packet
-      |> decode_rtp!()
-      |> PacketReorderer.process(receiver.packet_reorderer)
-
-    handler =
-      Enum.reduce(packets, receiver.stream_handler, fn rtp_packet, handler ->
-        {discontinuity?, sample, handler} =
-          StreamHandler.handle_packet(handler, rtp_packet, datetime)
-
-        if discontinuity?, do: receiver.callback.(handler.control_path, :discontinuity)
-        if sample, do: receiver.callback.(handler.control_path, sample)
-
-        handler
-      end)
-
-    %{receiver | stream_handler: handler, packet_reorderer: packet_reorderer}
+    RTPReceiver.UDP.close(state.parser)
+    :ok
   end
 
   defp send_empty_packets(_rtp_socket, _rtcp_socket, ip, server_port)

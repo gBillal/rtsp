@@ -25,12 +25,17 @@ defmodule RTSP.Server.ClientHandler do
   @doc """
   Callback invoked to handle media samples.
   """
-  @callback handle_media(control_path :: String.t(), sample :: tuple(), state()) :: :ok
+  @callback handle_media(control_path :: String.t(), sample :: tuple(), state()) :: state()
 
   @doc """
   Callback invoked to handle detected discontinuity in the stream identified by control path.
   """
-  @callback handle_discontinuity(control_path :: String.t(), state()) :: :ok
+  @callback handle_discontinuity(control_path :: String.t(), state()) :: state()
+
+  @doc """
+  Callback invoked when the connection is closed.
+  """
+  @callback handle_closed_connection(state) :: :ok
 
   defmacro __using__(__options) do
     quote do
@@ -48,17 +53,27 @@ defmodule RTSP.Server.ClientHandler do
       end
 
       @impl true
-      def handle_media(control_path, sample, _state) do
-        size = IO.iodata_length(elem(sample, 0))
-        Logger.debug("[#{control_path}] New media sample with size #{size} bytes")
+      def handle_media(control_path, sample, state) do
+        Logger.debug("[#{control_path}] New media sample")
+        state
       end
 
       @impl true
-      def handle_discontinuity(control_path, _state) do
+      def handle_discontinuity(control_path, state) do
         Logger.debug("[#{control_path}] discontuinty")
+        state
       end
 
-      defoverridable init: 1, handle_record: 3, handle_media: 3, handle_discontinuity: 2
+      @impl true
+      def handle_closed_connection(_state) do
+        Logger.debug("Connection closed")
+      end
+
+      defoverridable init: 1,
+                     handle_record: 3,
+                     handle_media: 3,
+                     handle_discontinuity: 2,
+                     handle_closed_connection: 1
     end
   end
 end
