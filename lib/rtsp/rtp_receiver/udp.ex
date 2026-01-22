@@ -13,12 +13,12 @@ defmodule RTSP.RTPReceiver.UDP do
   import RTSP.Helper
 
   @opaque t :: %__MODULE__{
-          socket: :inet.socket(),
-          rtcp_socket: :inet.socket(),
-          track: RTSP.track(),
-          packet_reorderer: PacketReorderer.t(),
-          stream_handler: RTSP.StreamHandler.t() | nil
-        }
+            socket: :inet.socket(),
+            rtcp_socket: :inet.socket(),
+            track: RTSP.track(),
+            packet_reorderer: PacketReorderer.t(),
+            stream_handler: RTSP.StreamHandler.t() | nil
+          }
 
   defstruct [:socket, :rtcp_socket, :track, :packet_reorderer, :stream_handler]
 
@@ -50,7 +50,11 @@ defmodule RTSP.RTPReceiver.UDP do
   @doc """
   Processes an incoming RTP packet.
   """
-  @spec process(binary(), t()) :: {list({:discontinuity, String.t()} | {String.t(), tuple()}), t()}
+  @spec process(binary(), t()) ::
+          {list(
+             {:discontinuity, RTSP.control_path()}
+             | {RTSP.control_path(), RTSP.sample() | [RTSP.sample()]}
+           ), t()}
   def process(packet, state) do
     datetime = System.os_time(:millisecond)
 

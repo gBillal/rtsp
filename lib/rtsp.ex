@@ -16,15 +16,11 @@ defmodule RTSP do
   The calling process will receive messages in the following format:
 
     * `{:rtsp, pid_or_name, :discontinuity}` - Indicates a discontinuity in the stream.
-    * `{:rtsp, pid_or_name, {control_path, sample_or_samples}}` - Contains the media sample received from the stream.
-      `control._path` is the RTSP control path for the track, and `sample` is the media sample data.
+    * `{:rtsp, pid_or_name, {control_path, sample_or_samples}}` - Contains the media sample(s) received from the stream.
+      `control_path` is the RTSP control path for the track, and `sample` is the media sample data.
     * `{:rtsp, pid_or_name, :session_closed}` - Indicates that the RTSP session has been closed.
 
-  A `sample` is a tuple in the format `{payload, rtp_timestamp, key_frame?, wallclock_timestamp}`:
-    * `payload` - The media payload data (a whole access unit in case of `video`).
-    * `rtp_timestamp` - The RTP timestamp of the sample in the advertised clock rate starting from 0.
-    * `key_frame?` - A boolean indicating whether the sample is a key frame (valid for `video` streams.)
-    * `wallclock_timestamp` - The wall clock timestamp when the sample was received.
+  A sample format is described in the `t:sample/0` type.
   """
 
   use GenServer
@@ -94,6 +90,8 @@ defmodule RTSP do
     ]
   ]
 
+  @type control_path :: String.t()
+
   @typedoc """
   Represents a track in the RTSP session.
 
@@ -104,11 +102,24 @@ defmodule RTSP do
   * `rtpmap` - The RTP mapping attribute for the track, which contains information about the payload type and encoding.
   """
   @type track :: %{
-          control_path: String.t(),
+          control_path: control_path(),
           type: :video | :audio | :application,
           fmtp: ExSDP.Attribute.FMTP.t() | nil,
           rtpmap: ExSDP.Attribute.RTPMapping.t() | nil
         }
+
+  @typedoc """
+  Represents a media sample received from the RTSP stream.
+
+  The sample is a tuple containing:
+  * `payload` - The media payload data (a whole access unit in case of `video`).
+  * `pts` - The RTP timestamp of the sample in the advertised clock rate starting from 0.
+  * `keyframe?` - A boolean indicating whether the sample is a key frame (always `true` for non video codecs).
+  * `timestamp` - The wall clock timestamp when the sample was received in milliseconds.
+  """
+  @type sample ::
+          {iodata(), pts :: non_neg_integer(), keyframe? :: boolean(),
+           timestamp :: non_neg_integer()}
 
   @doc """
   Starts a new RTSP client session.

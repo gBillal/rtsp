@@ -72,7 +72,7 @@ defmodule RTSP.MixProject do
           RTSP,
           ~r/RTSP\.Server($|\.)/,
           RTSP.FileServer,
-          ~r/RTSP\.RTPReceiver($|\.)/,
+          ~r/RTSP\.RTPReceiver($|\.)/
         ],
         RTP: [
           RTSP.RTP.Encoder,
