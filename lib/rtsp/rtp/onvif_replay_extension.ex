@@ -8,7 +8,7 @@ defmodule RTSP.RTP.OnvifReplayExtension do
   @two_to_pow_32 2 ** 32
 
   @type t :: %__MODULE__{
-          timestamp: DateTime.t(),
+          timestamp: non_neg_integer(),
           keyframe?: boolean(),
           discontinuity?: boolean(),
           last_frame?: boolean()
@@ -22,7 +22,7 @@ defmodule RTSP.RTP.OnvifReplayExtension do
   @spec decode(header :: binary()) :: t()
   def decode(<<ntp_timestamp::binary-size(8), c::1, _e::1, d::1, t::1, _rest::28>>) do
     %__MODULE__{
-      timestamp: from_ntp_timestamp(ntp_timestamp) |> DateTime.from_unix!(:nanosecond),
+      timestamp: from_ntp_timestamp(ntp_timestamp),
       keyframe?: c == 1,
       discontinuity?: d == 1,
       last_frame?: t == 1
@@ -30,8 +30,9 @@ defmodule RTSP.RTP.OnvifReplayExtension do
   end
 
   defp from_ntp_timestamp(<<ntp_seconds::32, ntp_fraction::32>>) do
-    fractional = (ntp_fraction * @second) |> div(@two_to_pow_32)
+    fractional = div(ntp_fraction * @second, @two_to_pow_32)
     unix_seconds = (ntp_seconds - @ntp_unix_epoch_diff) * @second
-    unix_seconds + fractional
+    # return timestamp in milliseconds
+    div(unix_seconds + fractional, 1000_000)
   end
 end

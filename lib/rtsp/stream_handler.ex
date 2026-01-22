@@ -4,14 +4,18 @@ defmodule RTSP.StreamHandler do
 
   require Logger
 
+  import Bitwise
+
   alias RTSP.RTP.OnvifReplayExtension
 
-  @timestamp_limit Bitwise.bsl(1, 32)
-  @seq_number_limit Bitwise.bsl(1, 16)
+  @timestamp_limit (1 <<< 32) - 1
+  @max_delta_timestamp 1 <<< 31
+  @seq_number_limit (1 <<< 16) - 1
   @max_replay_timestamp_diff 10
 
   @type t :: %__MODULE__{
           timestamps: {integer(), integer()} | nil,
+          timestamp_offset: integer() | nil,
           clock_rate: pos_integer(),
           parser_mod: module(),
           parser_state: any(),
@@ -26,13 +30,14 @@ defmodule RTSP.StreamHandler do
     :parser_state,
     :control_path,
     timestamps: nil,
+    timestamp_offset: nil,
     wallclock_timestamp: nil,
     clock_rate: 90_000,
     previous_seq_num: nil,
     last_replay_timestamp: ~U(1970-01-01 00:00:00Z)
   ]
 
-  @spec handle_packet(t(), ExRTP.Packet.t(), DateTime.t()) :: {boolean(), tuple() | nil, t()}
+  @spec handle_packet(t(), ExRTP.Packet.t(), non_neg_integer()) :: {boolean(), tuple() | nil, t()}
   def handle_packet(handler, packet, wallclock_timestamp) do
     {discontinuity, handler} =
       if discontinuity?(packet, handler) do
@@ -70,27 +75,36 @@ defmodule RTSP.StreamHandler do
   end
 
   defp discontinuity?(%{sequence_number: seq_num}, handler) do
-    rem(handler.previous_seq_num + 1, @seq_number_limit) != seq_num
+    (handler.previous_seq_num + 1 &&& @seq_number_limit) != seq_num
   end
 
   @spec convert_timestamp(t(), ExRTP.Packet.t()) :: {t(), ExRTP.Packet.t()}
+  defp convert_timestamp(%{timestamps: nil} = handler, %{timestamp: rtp_timestamp} = packet) do
+    {%{handler | timestamps: {rtp_timestamp, rtp_timestamp}, timestamp_offset: rtp_timestamp},
+     %{packet | timestamp: 0}}
+  end
+
   defp convert_timestamp(handler, %{timestamp: rtp_timestamp} = packet) do
-    {timestamp_base, previous_timestamp} = handler.timestamps || {rtp_timestamp, rtp_timestamp}
+    {base_ts, base_ext} = handler.timestamps
 
-    # timestamps in RTP don't have to be monotonic therefore there can be
-    # a situation where in 2 consecutive packets the latter packet will have smaller timestamp
-    # than the previous one while not overflowing the timestamp number
-    # https://datatracker.ietf.org/doc/html/rfc3550#section-5.1
+    delta = rtp_timestamp - base_ts
 
-    timestamp_base =
-      case from_which_rollover(previous_timestamp, rtp_timestamp, @timestamp_limit) do
-        :next -> timestamp_base - @timestamp_limit
-        :previous -> timestamp_base + @timestamp_limit
-        :current -> timestamp_base
+    # Check for forward or backward rollover
+    {acc, timestamp} =
+      cond do
+        delta >= 0 ->
+          base_ext = base_ext + delta
+          {{rtp_timestamp, base_ext}, base_ext}
+
+        delta < -@max_delta_timestamp ->
+          base_ext = base_ext + (delta &&& @timestamp_limit)
+          {{rtp_timestamp, base_ext}, base_ext}
+
+        true ->
+          {{base_ts, base_ext}, base_ext + delta}
       end
 
-    timestamp = rtp_timestamp - timestamp_base
-    {%{handler | timestamps: {timestamp_base, rtp_timestamp}}, %{packet | timestamp: timestamp}}
+    {%{handler | timestamps: acc}, %{packet | timestamp: timestamp - handler.timestamp_offset}}
   end
 
   defp parse({handler, packet}, wallclock_timestamp) do
@@ -106,24 +120,6 @@ defmodule RTSP.StreamHandler do
         log_error(packet, reason)
         {nil, %{handler | parser_state: state}}
     end
-  end
-
-  @spec from_which_rollover(number(), number(), number()) :: :current | :previous | :next
-  def from_which_rollover(previous_value, new_value, rollover_length) do
-    # a) current rollover
-    distance_if_current = abs(previous_value - new_value)
-    # b) new_value is from the previous rollover
-    distance_if_previous = abs(previous_value - (new_value - rollover_length))
-    # c) new_value is in the next rollover
-    distance_if_next = abs(previous_value - (new_value + rollover_length))
-
-    [
-      {:current, distance_if_current},
-      {:previous, distance_if_previous},
-      {:next, distance_if_next}
-    ]
-    |> Enum.min_by(fn {_atom, distance} -> distance end)
-    |> then(fn {result, _value} -> result end)
   end
 
   defp set_wallclock_timestamp(%{wallclock_timestamp: nil} = handler, wallclock_timestamp) do
