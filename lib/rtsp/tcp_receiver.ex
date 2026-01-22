@@ -14,6 +14,8 @@ defmodule RTSP.TCPReceiver do
   @active_mode 200
 
   defmodule State do
+    @moduledoc false
+
     @type t :: %__MODULE__{
             parent_pid: pid(),
             receiver: pid(),

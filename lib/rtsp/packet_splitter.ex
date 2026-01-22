@@ -1,7 +1,6 @@
 defmodule RTSP.PacketSplitter do
-  @moduledoc """
-  Split the incoming network packets muxed in the same TCP connection into RTSP, RTP and RTCP packets.
-  """
+  @moduledoc false
+  # Split the incoming network packets muxed in the same TCP connection into RTSP, RTP and RTCP packets.
 
   require Logger
 
