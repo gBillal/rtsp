@@ -2,6 +2,8 @@ defmodule RTSP.Server do
   @moduledoc """
   """
 
+  require Logger
+
   alias Membrane.RTSP.Server
 
   @doc """
@@ -26,7 +28,11 @@ defmodule RTSP.Server do
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
-    Server.start_link(get_config(opts))
+    with {:ok, pid} = Server.start_link(get_config(opts)) do
+      {:ok, port} = Server.port_number(pid)
+      Logger.info("RTSP Server started and listening on port #{port}")
+      {:ok, pid}
+    end
   end
 
   defdelegate port_number(port), to: Server
