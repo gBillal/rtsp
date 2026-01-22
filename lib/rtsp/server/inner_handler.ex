@@ -13,7 +13,12 @@ defmodule RTSP.Server.InnerHandler do
   @impl true
   def init(config) do
     {:ok, client_session} = ClientSession.start_link(config)
-    %{path: nil, client_session: client_session, recbuf: config[:udp_recbuf_size] || @udp_recbuf_size}
+
+    %{
+      path: nil,
+      client_session: client_session,
+      recbuf: config[:udp_recbuf_size] || @udp_recbuf_size
+    }
   end
 
   @impl true
