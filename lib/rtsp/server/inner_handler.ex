@@ -12,17 +12,19 @@ defmodule RTSP.Server.InnerHandler do
 
   @impl true
   def init(config) do
-    {:ok, client_session} = ClientSession.start_link(config)
-
     %{
       path: nil,
-      client_session: client_session,
+      config: config,
+      client_session: nil,
       recbuf: config[:udp_recbuf_size] || @udp_recbuf_size
     }
   end
 
   @impl true
-  def handle_open_connection(_socket, state), do: state
+  def handle_open_connection(_socket, state) do
+    {:ok, client_session} = ClientSession.start_link(state.config)
+    %{state | client_session: client_session}
+  end
 
   @impl true
   def handle_describe(_request, state) do
@@ -111,4 +113,8 @@ defmodule RTSP.Server.InnerHandler do
       end)
     end)
   end
+end
+
+defmodule TestHandler do
+  use RTSP.Server.ClientHandler
 end
