@@ -1,7 +1,7 @@
 defmodule RTSP.MixProject do
   use Mix.Project
 
-  @version "0.8.0"
+  @version "0.8.1"
   @github_url "https://github.com/gBillal/rtsp"
 
   def project do
@@ -14,7 +14,7 @@ defmodule RTSP.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
 
       # hex
-      description: "Simplify connecting to RTSP servers",
+      description: "High level RTSP client and server",
       package: package(),
 
       # docs
