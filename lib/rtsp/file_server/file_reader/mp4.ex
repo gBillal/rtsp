@@ -127,8 +127,13 @@ if Code.ensure_loaded?(ExMP4) do
       }
     end
 
-    defp fmtp(%{media: :av1}, pt) do
-      %ExSDP.Attribute.FMTP{pt: pt}
+    defp fmtp(%{media: :av1} = track, pt) do
+      %ExSDP.Attribute.FMTP{
+        pt: pt,
+        profile: track.priv_data.seq_profile,
+        level_idx: track.priv_data.seq_level_idx_0,
+        tier: track.priv_data.seq_tier_0
+      }
     end
 
     defp fmtp(%{media: :aac} = track, pt) do
