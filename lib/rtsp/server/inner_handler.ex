@@ -114,7 +114,3 @@ defmodule RTSP.Server.InnerHandler do
     end)
   end
 end
-
-defmodule TestHandler do
-  use RTSP.Server.ClientHandler
-end
