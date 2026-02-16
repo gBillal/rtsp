@@ -81,8 +81,17 @@ defmodule RTSP.ConnectionManager do
     if state.rtsp_session, do: Membrane.RTSP.close(state.rtsp_session)
     if state.keep_alive_timer, do: Process.cancel_timer(state.keep_alive_timer)
     if state.check_recbuf_timer, do: Process.cancel_timer(state.check_recbuf_timer)
+    if state.tcp_receiver, do: RTSP.TCPReceiver.stop(state.tcp_receiver)
+    Enum.each(state.udp_receivers, &RTSP.UDPReceiver.stop/1)
 
-    %{state | state: :init, rtsp_session: nil, keep_alive_timer: nil}
+    %{
+      state
+      | state: :init,
+        rtsp_session: nil,
+        keep_alive_timer: nil,
+        udp_receivers: [],
+        tcp_receiver: nil
+    }
   end
 
   @spec get_server_ip(State.t()) :: :inet.ip_address() | nil

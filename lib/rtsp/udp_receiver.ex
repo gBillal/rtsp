@@ -19,7 +19,7 @@ defmodule RTSP.UDPReceiver do
 
   @spec stop(pid()) :: :ok
   def stop(pid) do
-    GenServer.stop(pid, :normal)
+    GenServer.cast(pid, :terminate)
   end
 
   @impl true
@@ -44,6 +44,12 @@ defmodule RTSP.UDPReceiver do
     send_empty_packets(socket, rtcp_socket, options[:server_ip], track.server_port)
 
     {:ok, state}
+  end
+
+  @impl true
+  def handle_cast(:terminate, state) do
+    :gen_udp.close(state.socket)
+    {:stop, :normal, state}
   end
 
   @impl true

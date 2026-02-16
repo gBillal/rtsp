@@ -102,6 +102,82 @@ defmodule RTSPTest do
     ExMP4.Reader.close(reader)
   end
 
+  describe "Processes crash" do
+    test "clean processes after rtsp session crash", %{port: server_port} do
+      url = "rtsp://127.0.0.1:#{server_port}/hevc_opus"
+      {:ok, client_pid} = RTSP.start_link(stream_uri: url, allowed_media_types: [:video])
+      {:ok, _} = RTSP.connect(client_pid)
+      :ok = RTSP.play(client_pid)
+
+      state = :sys.get_state(client_pid)
+      assert Process.alive?(state.rtsp_session)
+      assert Process.alive?(state.tcp_receiver)
+
+      Process.exit(state.rtsp_session, :kill)
+
+      assert_receive {:rtsp, ^client_pid, :session_closed}
+      Process.sleep(10)
+      refute Process.alive?(state.tcp_receiver)
+    end
+
+    test "clean processes after tcp receiver crash", %{port: server_port} do
+      url = "rtsp://127.0.0.1:#{server_port}/hevc_opus"
+      {:ok, client_pid} = RTSP.start_link(stream_uri: url, allowed_media_types: [:video])
+      {:ok, _} = RTSP.connect(client_pid)
+      :ok = RTSP.play(client_pid)
+
+      state = :sys.get_state(client_pid)
+      assert Process.alive?(state.rtsp_session)
+      assert Process.alive?(state.tcp_receiver)
+
+      Process.exit(state.tcp_receiver, :kill)
+
+      assert_receive {:rtsp, ^client_pid, :session_closed}
+      refute Process.alive?(state.tcp_receiver)
+      refute Process.alive?(state.rtsp_session)
+    end
+
+    test "clean processes after udp receiver crash", %{port: server_port} do
+      url = "rtsp://127.0.0.1:#{server_port}/hevc_opus"
+
+      {:ok, client_pid} =
+        RTSP.start_link(
+          stream_uri: url,
+          allowed_media_types: [:video],
+          transport: {:udp, 10_000, 20_000}
+        )
+
+      {:ok, _} = RTSP.connect(client_pid)
+      :ok = RTSP.play(client_pid)
+
+      state = :sys.get_state(client_pid)
+      assert state.udp_receivers != []
+      assert Enum.all?(state.udp_receivers, &Process.alive?/1)
+
+      Process.exit(List.first(state.udp_receivers), :kill)
+
+      assert_receive {:rtsp, ^client_pid, :session_closed}
+      refute Enum.any?(state.udp_receivers, &Process.alive?/1)
+      Process.sleep(10)
+      refute Process.alive?(state.rtsp_session)
+    end
+
+    test "clean processes after client crashes", %{port: server_port} do
+      url = "rtsp://127.0.0.1:#{server_port}/hevc_opus"
+      {:ok, client_pid} = RTSP.start(stream_uri: url, allowed_media_types: [:video])
+      {:ok, _} = RTSP.connect(client_pid)
+      :ok = RTSP.play(client_pid)
+
+      state = :sys.get_state(client_pid)
+
+      Process.exit(client_pid, :kill)
+
+      Process.sleep(10)
+      refute Process.alive?(state.rtsp_session)
+      refute Process.alive?(state.tcp_receiver)
+    end
+  end
+
   for {path, fixture} <- @paths do
     describe "stream video & audio: #{path}" do
       test "use TCP", ctx do

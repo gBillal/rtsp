@@ -132,6 +132,11 @@ defmodule RTSP do
     GenServer.start_link(__MODULE__, opts, name: opts[:name])
   end
 
+  def start(opts) do
+    opts = Keyword.put_new(opts, :receiver, self())
+    GenServer.start(__MODULE__, opts, name: opts[:name])
+  end
+
   @doc """
   Connects the rtsp server.
 
@@ -227,33 +232,13 @@ defmodule RTSP do
   end
 
   @impl true
-  def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
-    state =
-      cond do
-        pid == state.tcp_receiver ->
-          notify_closed_session(state)
-          ConnectionManager.clean(%{state | tcp_receiver: nil})
-
-        pid in state.udp_receivers ->
-          case List.delete(state.udp_receivers, pid) do
-            [] ->
-              notify_closed_session(state)
-              ConnectionManager.clean(%{state | udp_receivers: []})
-
-            receivers ->
-              %{state | udp_receivers: receivers}
-          end
-
-        true ->
-          ConnectionManager.clean(state)
-      end
-
-    {:noreply, state}
-  end
-
-  @impl true
-  def handle_info({:EXIT, _pid, _reason}, state) do
-    {:noreply, ConnectionManager.clean(state)}
+  def handle_info({:EXIT, pid, _reason}, state) do
+    if state.rtsp_session == pid or state.tcp_receiver == pid or pid in state.udp_receivers do
+      notify_closed_session(state)
+      {:noreply, ConnectionManager.clean(state)}
+    else
+      {:noreply, state}
+    end
   end
 
   @impl true
@@ -272,12 +257,11 @@ defmodule RTSP do
       onvif_replay: state.onvif_replay != []
     ]
 
-    {:ok, pid} = TCPReceiver.start(options)
+    {:ok, pid} = TCPReceiver.start_link(options)
 
     :ok = :inet.setopts(state.socket, buffer: @initial_recv_buffer, active: 100)
     :ok = Membrane.RTSP.transfer_socket_control(state.rtsp_session, pid)
 
-    Process.monitor(pid)
     %{state | tcp_receiver: pid}
   end
 
@@ -293,9 +277,7 @@ defmodule RTSP do
         server_ip: server_ip
       ]
 
-      {:ok, pid} = UDPReceiver.start(opts)
-
-      Process.monitor(pid)
+      {:ok, pid} = UDPReceiver.start_link(opts)
       pid
     end)
     |> then(&%{state | udp_receivers: &1})
