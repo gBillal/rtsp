@@ -61,7 +61,7 @@ defmodule RTSP.RTP.Decoder.H265 do
     {:ok, {[packet.payload], packet.timestamp, packet.marker}, state}
   end
 
-  defp handle_unit_type(:fu, {header, data}, packet, state) do
+  defp handle_unit_type(:fu, {header, data}, packet, %State{} = state) do
     case FU.parse(data, packet.sequence_number, map_state_to_fu(state)) do
       {:ok, {data, type, _don}} ->
         data = [<<0::1, type::6, header.nuh_layer_id::6, header.nuh_temporal_id_plus1::3>> | data]
@@ -130,7 +130,7 @@ defmodule RTSP.RTP.Decoder.H265 do
 
   defp update_parameter_sets([], [], [], state), do: state
 
-  defp update_parameter_sets(vps, sps, pps, state) do
+  defp update_parameter_sets(vps, sps, pps, %State{} = state) do
     vps = Map.new(vps, &{NALU.VPS.id(&1), &1})
     sps = Map.new(sps, &{NALU.SPS.id(&1), &1})
 

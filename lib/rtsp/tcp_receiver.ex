@@ -45,12 +45,26 @@ defmodule RTSP.TCPReceiver do
     GenServer.start(__MODULE__, opts)
   end
 
+  def start_link(opts) do
+    GenServer.start_link(__MODULE__, opts)
+  end
+
+  def stop(pid) do
+    GenServer.cast(pid, :terminate)
+  end
+
   @impl true
   def init(options) do
     state = struct!(State, options)
     state = %{state | last_timestamp: System.monotonic_time(:millisecond)}
     Process.send_after(self(), :check_idle, 2_000)
     {:ok, state}
+  end
+
+  @impl true
+  def handle_cast(:terminate, state) do
+    :gen_tcp.close(state.socket)
+    {:stop, :normal, state}
   end
 
   @impl true

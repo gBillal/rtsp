@@ -49,7 +49,7 @@ defmodule RTSP.RTP.Decoder.H264 do
   defp maybe_strip_prefix(nalu), do: nalu
 
   # depayloader
-  defp depayload(packet, state) do
+  defp depayload(packet, %State{} = state) do
     with {:ok, {header, _payload} = nal} <- NAL.Header.parse_unit_header(packet.payload),
          unit_type = NAL.Header.decode_type(header),
          {:ok, nalus, state} <- handle_unit_type(unit_type, nal, packet, state) do
@@ -134,7 +134,7 @@ defmodule RTSP.RTP.Decoder.H264 do
 
   defp update_parameter_sets([], [], state), do: state
 
-  defp update_parameter_sets(sps, pps, state) do
+  defp update_parameter_sets(sps, pps, %State{} = state) do
     sps = Map.new(sps, &{NALU.SPS.id(&1), &1})
 
     pps =
