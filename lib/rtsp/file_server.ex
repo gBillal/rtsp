@@ -9,16 +9,27 @@ defmodule RTSP.FileServer do
 
   alias Membrane.RTSP.Server
 
+  @type file_entry :: %{path: String.t(), location: Path.t()}
+
+  @type option ::
+          {:files, [file_entry()]}
+          | {:rate_control, boolean()}
+          | {:loop, boolean() | pos_integer()}
+
+  @type options :: [option() | {atom(), term()}]
+
   @doc """
   Starts an RTSP file server.
   ## Options
   - `files` - a list of file paths to serve. Required.
   - `rate_control` - whether to enable rate control. Default is `true`.
+  - `loop` - controls looping: `false` plays once (default), `true` loops forever,
+    or a positive integer to loop that many additional times after the first play.
   - other options supported by `Membrane.RTSP.Server.start_link/1`.
   """
-  @spec start_link(keyword()) :: GenServer.on_start()
+  @spec start_link(options()) :: GenServer.on_start()
   def start_link(opts) do
-    {handler_options, server_options} = Keyword.split(opts, [:files, :rate_control])
+    {handler_options, server_options} = Keyword.split(opts, [:files, :rate_control, :loop])
 
     server_options =
       Keyword.merge(server_options, handler: __MODULE__.Handler, handler_config: handler_options)

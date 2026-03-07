@@ -4,11 +4,36 @@ defmodule RTSP.FileServer.MediaStreamer do
 
   use GenServer
 
+  defmodule State do
+    @moduledoc false
+    defstruct [
+      :path,
+      :rate_control,
+      :reader,
+      :sdp_medias,
+      :tracks,
+      loop: false,
+      pending_samples: %{},
+      start_time: nil,
+      timer_ref: nil
+    ]
+  end
+
   require Logger
 
   alias ExSDP.Attribute.RTPMapping
   alias RTSP.FileServer.FileReader
   alias RTSP.RTP.Encoder
+
+  @encoders %{
+    "H264" => {Encoder.H264, []},
+    "H265" => {Encoder.H265, []},
+    "AV1" => {Encoder.AV1, []},
+    "MPEG4-GENERIC" => {Encoder.MPEG4Audio, [mode: :hbr]},
+    "OPUS" => {Encoder.Opus, []},
+    "PCMA" => {Encoder.G711, []},
+    "PCMU" => {Encoder.G711, []}
+  }
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: opts[:name])
@@ -43,15 +68,13 @@ defmodule RTSP.FileServer.MediaStreamer do
         end)
 
       {:ok,
-       %{
+       %State{
          path: opts[:path],
          rate_control: opts[:rate_control],
+         loop: opts[:loop] || false,
          reader: reader,
          sdp_medias: medias,
-         tracks: tracks,
-         pending_samples: %{},
-         start_time: nil,
-         timer_ref: nil
+         tracks: tracks
        }}
     end
   end
@@ -104,87 +127,120 @@ defmodule RTSP.FileServer.MediaStreamer do
     current_time = System.monotonic_time(:millisecond)
     elapsed_time = current_time - state.start_time
 
-    {state, eof?} =
-      Enum.reduce(state.tracks, {state, true}, fn {track_id, ctx}, {state, done} ->
+    {state, result} =
+      Enum.reduce_while(state.tracks, {state, {:ok, true}}, fn {track_id, ctx},
+                                                                {state, {:ok, eof?}} ->
         case ctx.sample do
           :eof ->
-            {state, done}
+            {:cont, {state, {:ok, eof?}}}
 
           {payload, dts, pts, _sync?} when div(dts * 1000, ctx.timescale) <= elapsed_time ->
-            ctx = encode_and_send(ctx, payload, pts)
-            {next_sample, reader} = FileReader.next_sample(state.reader, track_id)
+            case encode_and_send(ctx, payload, pts) do
+              {:ok, ctx} ->
+                {next_sample, reader} = FileReader.next_sample(state.reader, track_id)
 
-            state = %{
-              state
-              | reader: reader,
-                tracks: Map.put(state.tracks, track_id, %{ctx | sample: next_sample})
-            }
+                state = %{
+                  state
+                  | reader: reader,
+                    tracks: Map.put(state.tracks, track_id, %{ctx | sample: next_sample})
+                }
 
-            {state, false}
+                {:cont, {state, {:ok, false}}}
+
+              {:error, reason} ->
+                {:halt, {state, {:error, reason}}}
+            end
 
           _ ->
-            {state, false}
+            {:cont, {state, {:ok, false}}}
         end
       end)
 
     state = %{state | timer_ref: Process.send_after(self(), :send_media, 20)}
 
-    if eof? do
-      Logger.info("Reached end of file for all tracks")
-      :timer.cancel(state.timer_ref)
-      close_sockets(state.tracks)
-      {:stop, :normal, state}
-    else
-      {:noreply, state}
+    case result do
+      {:error, reason} ->
+        Logger.warning("Connection error while streaming: #{inspect(reason)}")
+        :timer.cancel(state.timer_ref)
+        close_sockets(state.tracks)
+        {:stop, :normal, state}
+
+      {:ok, eof?} ->
+        cond do
+          eof? and should_loop?(state.loop) ->
+            {:ok, reader} = FileReader.init(state.path)
+            {tracks, reader} = restart_tracks(state.tracks, reader)
+
+            {:noreply,
+             %{
+               state
+               | reader: reader,
+                 tracks: tracks,
+                 loop: next_loop(state.loop),
+                 start_time: System.monotonic_time(:millisecond)
+             }}
+
+          eof? ->
+            Logger.info("Reached end of file for all tracks")
+            :timer.cancel(state.timer_ref)
+            close_sockets(state.tracks)
+            {:stop, :normal, state}
+
+          true ->
+            {:noreply, state}
+        end
     end
   end
 
   @impl true
   def handle_info(:send_all_media, state) do
-    do_send_media(state.tracks, state.reader)
-    Logger.info("Reached end of file for all tracks")
-    close_sockets(state.tracks)
-    {:stop, :normal, state}
+    case do_send_media(state.tracks, state.reader) do
+      :ok ->
+        if should_loop?(state.loop) do
+          {:ok, reader} = FileReader.init(state.path)
+          {tracks, reader} = restart_tracks(state.tracks, reader)
+          Process.send_after(self(), :send_all_media, 0)
+          {:noreply, %{state | reader: reader, tracks: tracks, loop: next_loop(state.loop)}}
+        else
+          Logger.info("Reached end of file for all tracks")
+          close_sockets(state.tracks)
+          {:stop, :normal, state}
+        end
+
+      {:error, reason} ->
+        Logger.warning("Connection error while streaming: #{inspect(reason)}")
+        close_sockets(state.tracks)
+        {:stop, :normal, state}
+    end
   end
 
-  defp init_payloader(%{encoding: "H264"} = mapping) do
+  defp init_payloader(mapping) do
+    {mod, extra_opts} = Map.fetch!(@encoders, mapping.encoding)
+    opts = [payload_type: mapping.payload_type] ++ extra_opts
+
     %{
-      payloader: Encoder.H264,
-      payloader_state: Encoder.H264.init(payload_type: mapping.payload_type),
-      timescale: mapping.clock_rate
+      payloader: mod,
+      payloader_state: mod.init(opts),
+      timescale: mapping.clock_rate,
+      pts_offset: 0,
+      last_pts: 0
     }
   end
 
-  defp init_payloader(%{encoding: "H265"} = mapping) do
-    %{
-      payloader: Encoder.H265,
-      payloader_state: Encoder.H265.init(payload_type: mapping.payload_type),
-      timescale: mapping.clock_rate
-    }
-  end
+  defp should_loop?(false), do: false
+  defp should_loop?(true), do: true
+  defp should_loop?(0), do: false
+  defp should_loop?(n) when is_integer(n) and n > 0, do: true
 
-  defp init_payloader(%{encoding: "AV1"} = mapping) do
-    %{
-      payloader: Encoder.AV1,
-      payloader_state: Encoder.AV1.init(payload_type: mapping.payload_type),
-      timescale: mapping.clock_rate
-    }
-  end
+  defp next_loop(true), do: true
+  defp next_loop(n) when is_integer(n), do: n - 1
 
-  defp init_payloader(%{encoding: "MPEG4-GENERIC"} = mapping) do
-    %{
-      payloader: Encoder.MPEG4Audio,
-      payloader_state: Encoder.MPEG4Audio.init(mode: :hbr, payload_type: mapping.payload_type),
-      timescale: mapping.clock_rate
-    }
-  end
-
-  defp init_payloader(%{encoding: "OPUS"} = mapping) do
-    %{
-      payloader: Encoder.Opus,
-      payloader_state: Encoder.Opus.init(payload_type: mapping.payload_type),
-      timescale: mapping.clock_rate
-    }
+  defp restart_tracks(tracks, reader) do
+    Enum.reduce(tracks, {%{}, reader}, fn {track_id, ctx}, {acc, reader} ->
+      {sample, reader} = FileReader.next_sample(reader, track_id)
+      new_offset = ctx.pts_offset + ctx.last_pts + 1
+      {Map.put(acc, track_id, %{ctx | sample: sample, pts_offset: new_offset}), reader}
+    end)
   end
 
   defp do_send_media(tracks, _reader) when map_size(tracks) == 0, do: :ok
@@ -192,48 +248,57 @@ defmodule RTSP.FileServer.MediaStreamer do
   defp do_send_media(tracks, reader) do
     {track_id, ctx} =
       Enum.min_by(tracks, fn {_id, ctx} ->
-        div(elem(ctx.sample, 1) * 1000, ctx.timescale)
+        {_payload, dts, _pts, _sync?} = ctx.sample
+        div(dts * 1000, ctx.timescale)
       end)
 
-    ctx = encode_and_send(ctx, elem(ctx.sample, 0), elem(ctx.sample, 2))
+    {payload, _dts, pts, _sync?} = ctx.sample
 
-    case FileReader.next_sample(reader, track_id) do
-      {:eof, _} ->
-        flush_packets(ctx)
-        do_send_media(Map.delete(tracks, track_id), reader)
+    with {:ok, ctx} <- encode_and_send(ctx, payload, pts) do
+      case FileReader.next_sample(reader, track_id) do
+        {:eof, _} ->
+          with :ok <- flush_packets(ctx) do
+            do_send_media(Map.delete(tracks, track_id), reader)
+          end
 
-      {next_sample, reader} ->
-        tracks = Map.put(tracks, track_id, %{ctx | sample: next_sample})
-        do_send_media(tracks, reader)
+        {next_sample, reader} ->
+          tracks = Map.put(tracks, track_id, %{ctx | sample: next_sample})
+          do_send_media(tracks, reader)
+      end
     end
   end
 
   defp encode_and_send(ctx, payload, pts) do
-    {rtp_packets, payload_state} = ctx.payloader.handle_sample(payload, pts, ctx.payloader_state)
+    {rtp_packets, payload_state} =
+      ctx.payloader.handle_sample(payload, pts + ctx.pts_offset, ctx.payloader_state)
 
-    rtp_packets
-    |> Stream.map(&%{&1 | ssrc: ctx.ssrc})
-    |> Stream.map(&ExRTP.Packet.encode/1)
-    |> Enum.to_list()
-    |> send_packets(ctx)
-
-    %{ctx | payloader_state: payload_state}
+    case encode_and_send_packets(rtp_packets, ctx) do
+      :ok -> {:ok, %{ctx | payloader_state: payload_state, last_pts: pts}}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   # send any remaining packets in buffers before closing
   defp flush_packets(ctx) do
     if function_exported?(ctx.payloader, :flush, 1) do
       ctx.payloader.flush(ctx.payloader_state)
-      |> Stream.map(&%{&1 | ssrc: ctx.ssrc})
-      |> Stream.map(&ExRTP.Packet.encode/1)
-      |> Enum.to_list()
-      |> send_packets(ctx)
+      |> encode_and_send_packets(ctx)
+    else
+      :ok
     end
+  end
+
+  defp encode_and_send_packets(packets, ctx) do
+    packets
+    |> Stream.map(&%{&1 | ssrc: ctx.ssrc})
+    |> Stream.map(&ExRTP.Packet.encode/1)
+    |> Enum.to_list()
+    |> send_packets(ctx)
   end
 
   defp send_packets(packets, %{transport: :TCP, tcp_socket: socket} = ctx) do
     packets = Enum.map(packets, &[36, elem(ctx.channels, 0), <<byte_size(&1)::16>>, &1])
-    :ok = :gen_tcp.send(socket, packets)
+    :gen_tcp.send(socket, packets)
   end
 
   defp send_packets(packets, %{transport: :UDP} = ctx) do
