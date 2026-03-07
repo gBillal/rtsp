@@ -129,7 +129,7 @@ defmodule RTSP.FileServer.MediaStreamer do
 
     {state, result} =
       Enum.reduce_while(state.tracks, {state, {:ok, true}}, fn {track_id, ctx},
-                                                                {state, {:ok, eof?}} ->
+                                                               {state, {:ok, eof?}} ->
         case ctx.sample do
           :eof ->
             {:cont, {state, {:ok, eof?}}}
@@ -195,10 +195,10 @@ defmodule RTSP.FileServer.MediaStreamer do
   @impl true
   def handle_info(:send_all_media, state) do
     case do_send_media(state.tracks, state.reader) do
-      :ok ->
+      {:ok, final_tracks} ->
         if should_loop?(state.loop) do
           {:ok, reader} = FileReader.init(state.path)
-          {tracks, reader} = restart_tracks(state.tracks, reader)
+          {tracks, reader} = restart_tracks(final_tracks, reader)
           Process.send_after(self(), :send_all_media, 0)
           {:noreply, %{state | reader: reader, tracks: tracks, loop: next_loop(state.loop)}}
         else
@@ -243,9 +243,11 @@ defmodule RTSP.FileServer.MediaStreamer do
     end)
   end
 
-  defp do_send_media(tracks, _reader) when map_size(tracks) == 0, do: :ok
+  defp do_send_media(tracks, reader), do: do_send_media(tracks, reader, %{})
 
-  defp do_send_media(tracks, reader) do
+  defp do_send_media(tracks, _reader, done) when map_size(tracks) == 0, do: {:ok, done}
+
+  defp do_send_media(tracks, reader, done) do
     {track_id, ctx} =
       Enum.min_by(tracks, fn {_id, ctx} ->
         {_payload, dts, _pts, _sync?} = ctx.sample
@@ -258,12 +260,11 @@ defmodule RTSP.FileServer.MediaStreamer do
       case FileReader.next_sample(reader, track_id) do
         {:eof, _} ->
           with :ok <- flush_packets(ctx) do
-            do_send_media(Map.delete(tracks, track_id), reader)
+            do_send_media(Map.delete(tracks, track_id), reader, Map.put(done, track_id, ctx))
           end
 
         {next_sample, reader} ->
-          tracks = Map.put(tracks, track_id, %{ctx | sample: next_sample})
-          do_send_media(tracks, reader)
+          do_send_media(Map.put(tracks, track_id, %{ctx | sample: next_sample}), reader, done)
       end
     end
   end

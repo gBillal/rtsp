@@ -34,7 +34,7 @@ defmodule RTSP.RTP.Decoder.H264.FU do
   """
   @spec parse(binary(), non_neg_integer(), t) ::
           {:ok, {binary(), NAL.Header.type()}}
-          | {:error, :packet_malformed | :invalid_first_packet}
+          | {:error, :packet_malformed | :invalid_first_packet | :invalid_packet}
           | {:incomplete, t()}
   def parse(<<1::1, 1::1, _type::bitstring>>, _seq_num, _acc) do
     {:error, :packet_malformed}
