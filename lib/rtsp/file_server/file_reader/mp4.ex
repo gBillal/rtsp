@@ -12,26 +12,26 @@ if Code.ensure_loaded?(ExMP4) do
 
     @impl true
     def init(path) do
-      reader = ExMP4.Reader.new!(path)
+      with {:ok, reader} <- ExMP4.Reader.new(path) do
+        tracks =
+          reader
+          |> ExMP4.Reader.tracks()
+          |> Map.new(&{"track=#{&1.id}", &1})
 
-      tracks =
-        reader
-        |> ExMP4.Reader.tracks()
-        |> Map.new(&{"track=#{&1.id}", &1})
+        filters =
+          Map.new(tracks, fn {control, track} ->
+            case track.media do
+              codec when codec in [:h264, :h265] ->
+                {:ok, filter} = MP4ToAnnexb.init(track, [])
+                {control, {MP4ToAnnexb, filter}}
 
-      filters =
-        Map.new(tracks, fn {control, track} ->
-          case track.media do
-            codec when codec in [:h264, :h265] ->
-              {:ok, filter} = MP4ToAnnexb.init(track, [])
-              {control, {MP4ToAnnexb, filter}}
+              _ ->
+                {control, nil}
+            end
+          end)
 
-            _ ->
-              {control, nil}
-          end
-        end)
-
-      %__MODULE__{reader: reader, tracks: tracks, filters: filters}
+        {:ok, %__MODULE__{reader: reader, tracks: tracks, filters: filters}}
+      end
     end
 
     @impl true

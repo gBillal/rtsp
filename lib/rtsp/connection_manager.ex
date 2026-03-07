@@ -151,7 +151,7 @@ defmodule RTSP.ConnectionManager do
     Process.send_after(self(), :keep_alive, interval)
   end
 
-  @spec setup_rtsp_connection_with_tcp(State.t(), [RTSP.track()], boolean()) ::
+  @spec setup_rtsp_connection_with_tcp(State.t(), [RTSP.track()], list()) ::
           {:ok, State.t()} | {:error, reason :: term()}
   defp setup_rtsp_connection_with_tcp(state, tracks, onvif_replay) do
     socket = Membrane.RTSP.get_socket(state.rtsp_session)
