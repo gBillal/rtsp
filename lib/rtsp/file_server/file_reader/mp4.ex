@@ -140,7 +140,15 @@ if Code.ensure_loaded?(ExMP4) do
       [descriptor] = MediaCodecs.MPEG4.parse_descriptors(track.priv_data.es_descriptor)
       asc = descriptor.dec_config_descr.decoder_specific_info
 
-      "fmtp:#{pt} mode=AAC-hbr; sizeLength=13; indexLength=3; indexDeltaLength=3; constantDuration=1024; config=#{Base.encode16(asc, case: :upper)}"
+      %ExSDP.Attribute.FMTP{
+        pt: pt,
+        mode: :AAC_hbr,
+        sizelength: 13,
+        indexlength: 3,
+        indexdeltalength: 3,
+        constantduration: 1024,
+        config: asc
+      }
     end
 
     defp fmtp(%{media: :opus}, pt) do
