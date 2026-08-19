@@ -133,6 +133,7 @@ defmodule RTSPTest do
       Process.exit(state.tcp_receiver, :kill)
 
       assert_receive {:rtsp, ^client_pid, :session_closed}
+      Process.sleep(10)
       refute Process.alive?(state.tcp_receiver)
       refute Process.alive?(state.rtsp_session)
     end

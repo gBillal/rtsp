@@ -19,10 +19,11 @@ defmodule RTSP.Helper do
 
   @spec parser(atom(), ExSDP.Attribute.FMTP.t()) :: {module(), any()}
   def parser(:h264, fmtp) do
-    sps = fmtp.sprop_parameter_sets && fmtp.sprop_parameter_sets.sps
-    pps = fmtp.sprop_parameter_sets && fmtp.sprop_parameter_sets.pps
+    # `fmtp` may be absent entirely (in-band SPS/PPS); the h265 clause below
+    # already guards the same way.
+    sprop = fmtp && fmtp.sprop_parameter_sets
 
-    {Decoder.H264, Decoder.H264.init(sps: sps, pps: pps)}
+    {Decoder.H264, Decoder.H264.init(sps: sprop && sprop.sps, pps: sprop && sprop.pps)}
   end
 
   def parser(:h265, fmtp) do

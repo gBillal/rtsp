@@ -119,8 +119,17 @@ defmodule RTSP.RTP.Decoder.H264 do
     {sample, state} =
       cond do
         key_frame? ->
-          state = %{state | access_unit: get_parameter_sets(state, first_vcl_nalu) ++ access_unit}
-          {convert_to_tuple(state, key_frame?), %{state | seen_key_frame?: true}}
+          # A key frame referencing parameter sets that never arrived (a
+          # mid-stream join on a track without fmtp sprop, before the in-band
+          # sets) is not yet decodable — wait for the next key frame.
+          case get_parameter_sets(state, first_vcl_nalu) do
+            {:ok, parameter_sets} ->
+              state = %{state | access_unit: parameter_sets ++ access_unit}
+              {convert_to_tuple(state, key_frame?), %{state | seen_key_frame?: true}}
+
+            :error ->
+              {nil, state}
+          end
 
         state.seen_key_frame? ->
           {convert_to_tuple(state, key_frame?), state}
@@ -148,15 +157,19 @@ defmodule RTSP.RTP.Decoder.H264 do
 
   defp get_parameter_sets(state, first_vcl_nalu) do
     pic_parameter_set_id = NALU.Slice.parse(first_vcl_nalu).pic_parameter_set_id
-    seq_parameter_set_id = state.pps[pic_parameter_set_id] |> elem(0)
 
-    pps =
-      state.pps
-      |> Map.values()
-      |> Enum.filter(&(elem(&1, 0) == seq_parameter_set_id))
-      |> Enum.map(&elem(&1, 1))
+    with {seq_parameter_set_id, _nalu} <- state.pps[pic_parameter_set_id],
+         sps when not is_nil(sps) <- state.sps[seq_parameter_set_id] do
+      pps =
+        state.pps
+        |> Map.values()
+        |> Enum.filter(&(elem(&1, 0) == seq_parameter_set_id))
+        |> Enum.map(&elem(&1, 1))
 
-    [state.sps[seq_parameter_set_id] | pps]
+      {:ok, [sps | pps]}
+    else
+      _missing -> :error
+    end
   end
 
   defp convert_to_tuple(state, keyframe?) do
